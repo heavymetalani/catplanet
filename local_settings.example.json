@@ -1,0 +1,16 @@
+{
+  "_note": "Copy this file to local_settings.json and fill in your own values. local_settings.json is gitignored, so your settings stay private. Every field is optional.",
+  "reference_audio": "voices/narrator.wav",
+  "cats": [
+    {
+      "name": "Whiskers",
+      "pronouns": "she/her",
+      "appearance": "orange tabby with a white chest and white front paws. Striped tail with a darker tip. Slim build."
+    },
+    {
+      "name": "Shadow",
+      "pronouns": "he/him",
+      "appearance": "solid grey cat with no markings and green eyes. Large, stocky build."
+    }
+  ]
+}

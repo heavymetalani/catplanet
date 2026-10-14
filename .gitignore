@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# Personal settings -- never commit.
+# local_settings.json holds the voice to clone and your cats' names.
+# The committed template is local_settings.example.json.
+# ---------------------------------------------------------------------------
+local_settings.json
+cats.json
+
+# Run log and version counter. Local to this machine: it lists your original
+# video filenames. Back it up -- deleting it restarts numbering at 1 and
+# overwrites existing outputs.
+batch_state.json
+batch_state.json.tmp
+
+# ---------------------------------------------------------------------------
+# Input and output folders (videos, voice recordings, generated audio and
+# scripts). The code recreates the output folders when it needs them.
+# ---------------------------------------------------------------------------
+voices/
+videos/
+samples/
+video_samples/
+voice_samples/
+music_samples/
+music_tests/
+descriptions/
+audio/
+
+# Safety net: no media file anywhere in the tree, even outside those folders.
+*.mov
+*.MOV
+*.mp4
+*.MP4
+*.m4v
+*.avi
+*.mkv
+*.webm
+*.wav
+*.WAV
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.opus
+*.aac
+
+# ---------------------------------------------------------------------------
+# ACE-Step 1.5: a 13 GB clone of someone else's repository, with its own git
+# history and model weights. MUSIC GEN/README.md explains how to download it.
+# ---------------------------------------------------------------------------
+MUSIC GEN/ACE-Step-1.5/
+
+# ---------------------------------------------------------------------------
+# Python and macOS clutter
+# ---------------------------------------------------------------------------
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
