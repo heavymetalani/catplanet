@@ -1,3 +1,5 @@
+> **Note:** this is the original design plan for the music stage, kept for reference. Since the project was reorganized, the modules it mentions live in `catplanet/` (for example `catplanet/generate_music.py`), and test clips go in `data/scratch/` rather than `samples/`.
+
 # Stage 4: String Quartet Scoring
 
 Plan for wiring `MUSIC GEN/` (ACE-Step 1.5) into the video-interpreter pipeline.

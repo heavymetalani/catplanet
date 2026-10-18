@@ -99,24 +99,34 @@ pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 ok "Python deps installed"
 
-# 7. Samples directory
-mkdir -p samples descriptions
-ok "samples/ and descriptions/ ready"
+# 7. Data folders and personal settings
+mkdir -p data/inbox data/voices data/outputs data/scratch
+ok "data/inbox, data/voices, data/outputs and data/scratch ready"
+
+if [[ ! -f config/local_settings.json ]]; then
+  cp config/local_settings.example.json config/local_settings.json
+  ok "Created config/local_settings.json from the template -- edit it with your voice clip and cats"
+else
+  ok "config/local_settings.json already exists"
+fi
 
 cat <<EOF
 
 All set. Common commands (after 'source .venv/bin/activate'):
 
-  # Full pipeline, video -> narrated voiceover audio
-  python pipeline.py samples/<your_clip>.mov --narrate
+  # Batch: drop videos into data/inbox/, then
+  python batch.py --dry-run     # preview
+  python batch.py               # each finished clip lands in data/outputs/<number>/
 
-  # Full pipeline, no TTS (just prints the script)
-  python pipeline.py samples/<your_clip>.mov
+  # One clip by hand (outputs are written next to the video)
+  python pipeline.py data/scratch/<your_clip>.mov            # just print the script
+  python pipeline.py data/scratch/<your_clip>.mov --narrate  # script + voiceover
 
   # Individual stages
-  python describe_video.py  samples/<your_clip>.mov          # stage 1: description
-  python generate_script.py --description d.txt --length 28  # stage 2: script
-  python generate_voice.py  --script s.txt --out out.wav     # stage 3: TTS
+  python -m catplanet.describe_video  data/scratch/<your_clip>.mov          # stage 1
+  python -m catplanet.generate_script --description d.txt --length 28       # stage 2
+  python -m catplanet.generate_voice  --script s.txt --out out.wav          # stage 3
 
-Drop a cat video into ./samples/ and point the script at it.
+Music (stage 4) needs the ACE-Step server: see MUSIC GEN/README.md.
+Full guide: README.md and docs/.
 EOF

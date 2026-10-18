@@ -2,12 +2,13 @@
 """
 local_settings.py
 
-Loads personal settings from local_settings.json, which stays on your machine
-and is never committed (it is listed in .gitignore).
+Loads personal settings from config/local_settings.json, which stays on your
+machine and is never committed (it is listed in .gitignore).
 
 What lives there
 ----------------
-    reference_audio   Path to the voice clip Chatterbox clones for narration.
+    reference_audio   Path to the voice clip Chatterbox clones for narration,
+                      relative to the project root (e.g. data/voices/me.wav).
                       Used by batch.py. A recording of a real person's voice is
                       personal data, so the path stays out of the code.
     cats              Your cats' names, pronouns and coat descriptions. Used by
@@ -15,11 +16,11 @@ What lives there
 
 To set up a fresh copy of the project:
 
-    cp local_settings.example.json local_settings.json
+    cp config/local_settings.example.json config/local_settings.json
 
-then edit local_settings.json with your own values. Every setting is optional:
-with no file at all, the pipeline still runs, using Chatterbox's default voice
-and describing cats without names.
+then edit config/local_settings.json with your own values. Every setting is
+optional: with no file at all, the pipeline still runs, using Chatterbox's
+default voice and describing cats without names.
 """
 from __future__ import annotations
 
@@ -27,9 +28,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent
-LOCAL_FILE = REPO / "local_settings.json"
-EXAMPLE_FILE = REPO / "local_settings.example.json"
+from . import paths
+
+LOCAL_FILE = paths.LOCAL_SETTINGS
+EXAMPLE_FILE = paths.LOCAL_SETTINGS_EXAMPLE
 
 _cache: dict | None = None
 

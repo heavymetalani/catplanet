@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cat Planet Studio</title>
+<style>
+/* ------------------------------------------------------------------ tokens */
+:root {
+  --bg: #E7ECE4;          /* lichen mist */
+  --panel: #F7F9F4;
+  --ink: #1D2A2C;         /* deep slate */
+  --ink-soft: #56645F;
+  --line: #C6D0C2;
+  --moss: #3F6A4A;        /* actions, finished stages */
+  --moss-ink: #F2F7F0;
+  --moss-wash: #DCE8DA;
+  --ochre: #B07A12;       /* changed settings, work in progress */
+  --ochre-wash: #F2E5C4;
+  --rust: #A5432B;        /* problems */
+  --rust-wash: #F3DDD5;
+  --ui: "Avenir Next", Avenir, "Segoe UI", system-ui, sans-serif;
+  --display: "Iowan Old Style", Palatino, "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --code: ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111915; --panel: #18221D; --ink: #E1E8DF; --ink-soft: #9AA89F;
+    --line: #2D3B33; --moss: #82B48C; --moss-ink: #0F1A12; --moss-wash: #213328;
+    --ochre: #E2B04E; --ochre-wash: #3A3020; --rust: #E58066; --rust-wash: #3D2620;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111915; --panel: #18221D; --ink: #E1E8DF; --ink-soft: #9AA89F;
+  --line: #2D3B33; --moss: #82B48C; --moss-ink: #0F1A12; --moss-wash: #213328;
+  --ochre: #E2B04E; --ochre-wash: #3A3020; --rust: #E58066; --rust-wash: #3D2620;
+  color-scheme: dark;
+}
+
+/* -------------------------------------------------------------------- base */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.5 var(--ui); font-feature-settings: "kern", "liga";
+}
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--ochre); outline-offset: 2px; border-radius: 4px; }
+[hidden] { display: none !important; }
+
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px 64px; }
+@media (max-width: 640px) { .wrap { padding: 0 16px 48px; } }
+
+/* ------------------------------------------------------------------ header */
+header.top {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; padding: 28px 0 22px;
+}
+.brand h1 {
+  font: 600 2.6rem/1 var(--display); letter-spacing: -0.01em; margin: 0;
+}
+.brand p { margin: 6px 0 0; color: var(--ink-soft); font-size: 0.95rem; }
+
+.modes {
+  display: inline-flex; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 4px;
+}
+.modes button {
+  border: 0; background: none; padding: 8px 18px; border-radius: 999px;
+  cursor: pointer; color: var(--ink-soft); font-weight: 500;
+}
+.modes button[aria-pressed="true"] { background: var(--moss); color: var(--moss-ink); }
+
+/* ------------------------------------------------------------------ layout */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
+@media (max-width: 980px) { .layout { grid-template-columns: 1fr; } }
+aside.side { position: sticky; top: 20px; display: grid; gap: 18px; }
+@media (max-width: 980px) { aside.side { position: static; } }
+
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
+
+/* ----------------------------------------------------------------- profile */
+.profile {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px;
+  padding: 14px 18px; margin-bottom: 18px;
+}
+.profile label { font-weight: 600; }
+.profile select { min-width: 220px; }
+.profile .spacer { flex: 1; }
+.profile .changerow { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px 14px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.profile .changes { color: var(--ochre); font-size: 0.92rem; font-weight: 600; }
+.linkish.quiet { color: var(--ink-soft); }
+
+/* ------------------------------------------------------------------- form */
+form.settings { padding: 6px 22px 10px; }
+section.group { padding: 18px 0 10px; border-top: 1px solid var(--line); }
+section.group:first-child { border-top: 0; }
+section.group > h2 {
+  font: 600 1.45rem/1.2 var(--display); margin: 0 0 6px;
+}
+details.advanced > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px;
+}
+details.advanced > summary::-webkit-details-marker { display: none; }
+details.advanced > summary h2 { font: 600 1.45rem/1.2 var(--display); margin: 0; }
+details.advanced > summary .hint { color: var(--ink-soft); font-size: 0.92rem; }
+details.advanced > summary::before {
+  content: ""; width: 9px; height: 9px; border-right: 2px solid var(--ink-soft);
+  border-bottom: 2px solid var(--ink-soft); transform: rotate(-45deg) translateY(-2px);
+  transition: transform .15s;
+}
+details.advanced[open] > summary::before { transform: rotate(45deg) translateY(-4px); }
+h3.sub { font: 600 1rem/1.3 var(--ui); color: var(--ink-soft); margin: 18px 0 2px; }
+
+.field {
+  display: grid; grid-template-columns: 190px minmax(0, 1fr) auto; gap: 4px 12px;
+  align-items: center; padding: 8px 0 8px 12px; margin-left: -12px;
+  border-left: 3px solid transparent;
+}
+.field.changed { border-left-color: var(--ochre); }
+.field > label { font-weight: 500; }
+.field .control { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.field .control select, .field .control input[type="text"] { flex: 1; min-width: 0; }
+.field .control input.custom { width: 9em; flex: 0 0 auto; }
+@media (max-width: 640px) {
+  .field { grid-template-columns: minmax(0, 1fr) auto; }
+  .field > label { grid-column: 1 / -1; }
+}
+select, input[type="text"], input[type="number"] {
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 10px; min-height: 40px;
+}
+.field.changed select, .field.changed input { border-color: var(--ochre); }
+
+button.info {
+  width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--panel); color: var(--ink-soft); cursor: pointer;
+  font: italic 600 15px/1 var(--display); display: grid; place-items: center;
+}
+button.info[aria-expanded="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.infotext {
+  grid-column: 1 / -1; margin: 6px 0 2px; padding: 12px 14px; border-radius: 10px;
+  background: var(--moss-wash); max-width: 68ch; font-size: 0.95rem;
+}
+.infotext p { margin: 0; }
+.infotext .now { margin-top: 8px; color: var(--ink-soft); font-size: 0.88rem; }
+
+button.icon {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
+  min-height: 40px; padding: 0 12px; cursor: pointer;
+}
+
+/* -------------------------------------------------------------- buttons */
+.btn {
+  border-radius: 10px; padding: 10px 18px; cursor: pointer; font-weight: 600;
+  border: 1px solid var(--line); background: var(--panel); min-height: 44px;
+}
+.btn.primary { background: var(--moss); color: var(--moss-ink); border-color: var(--moss); }
+.btn.danger { color: var(--rust); border-color: var(--rust); background: transparent; }
+.btn.small { padding: 6px 12px; min-height: 34px; font-weight: 500; font-size: 0.92rem; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.linkish { background: none; border: 0; padding: 0; color: var(--moss); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; font-size: 0.92rem; }
+
+/* ------------------------------------------------------------- side panel */
+.side .panel { padding: 16px 18px; }
+.side h2 { font: 600 1.15rem/1.2 var(--display); margin: 0 0 10px; }
+ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+ul.checks > li { display: grid; grid-template-columns: 14px 1fr; gap: 10px; align-items: start; }
+.dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 7px; background: var(--line); }
+.dot.ok { background: var(--moss); }
+.dot.warn { background: var(--ochre); }
+.dot.bad { background: var(--rust); }
+.dot.off { background: transparent; border: 2px solid var(--line); }
+ul.checks .sub { color: var(--ink-soft); font-size: 0.88rem; }
+ul.checks .row { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; }
+ul.queue { margin: 6px 0 0; padding-left: 18px; font-size: 0.88rem; color: var(--ink-soft); }
+
+pre.cmd {
+  margin: 0; padding: 12px; border-radius: 10px; background: var(--bg);
+  border: 1px solid var(--line); font: 13px/1.6 var(--code); white-space: normal;
+}
+pre.cmd .flag { white-space: nowrap; }
+pre.cmd .val { white-space: nowrap; }
+pre.cmd .val.long { white-space: normal; overflow-wrap: anywhere; }
+.cmdbar { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.actions { display: grid; gap: 10px; margin-top: 14px; }
+.why { color: var(--rust); font-size: 0.92rem; margin: 0; }
+.warnline { color: var(--ochre); font-size: 0.92rem; margin: 0; }
+
+/* ---------------------------------------------------------------- run view */
+.runhead { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 18px 22px; }
+.runhead h2 { font: 600 1.6rem/1.2 var(--display); margin: 0; }
+.runhead .elapsed { color: var(--ink-soft); }
+.runhead .spacer { flex: 1; }
+.cmdline { padding: 0 22px 16px; }
+.clips { list-style: none; margin: 0; padding: 0 22px 8px; }
+.clip { padding: 16px 0; border-top: 1px solid var(--line); display: grid;
+  grid-template-columns: 170px minmax(0, 1fr); gap: 8px 16px; align-items: center; }
+@media (max-width: 720px) { .clip { grid-template-columns: 1fr; } }
+.clip .who { font-weight: 600; }
+.clip .who small { display: block; font-weight: 400; color: var(--ink-soft); }
+.clip .note { grid-column: 2; font-size: 0.92rem; color: var(--ink-soft); }
+.clip.failed .note, .clip.stopped .note { color: var(--rust); }
+@media (max-width: 720px) { .clip .note { grid-column: 1; } }
+
+/* the trail: one paw print per finished stage */
+ol.trail { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 0; }
+ol.trail li { display: grid; justify-items: center; gap: 2px; min-width: 92px; position: relative; }
+ol.trail li + li::before {
+  content: ""; position: absolute; top: 14px; right: calc(50% + 16px); width: calc(100% - 32px);
+  border-top: 2px dotted var(--line);
+}
+ol.trail li.done + li::before, ol.trail li.reused + li::before { border-top-color: var(--moss); }
+.mark { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; }
+.mark svg { width: 22px; height: 22px; }
+li.todo .mark { border: 2px solid var(--line); width: 14px; height: 14px; margin: 8px; }
+li.done .mark { color: var(--moss); }
+li.reused .mark { color: var(--moss); opacity: .55; }
+li.active .mark { border: 3px solid var(--ochre); width: 22px; height: 22px; margin: 4px;
+  animation: breathe 1.6s ease-in-out infinite; }
+li.failed .mark { color: var(--rust); }
+ol.trail .lbl { font-size: 0.8rem; color: var(--ink-soft); text-align: center; }
+li.active .lbl { color: var(--ochre); font-weight: 600; }
+@keyframes breathe { 50% { transform: scale(.82); opacity: .6; } }
+@media (prefers-reduced-motion: reduce) { li.active .mark { animation: none; } }
+
+details.log { padding: 4px 22px 20px; }
+details.log summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+pre.log {
+  margin: 0; max-height: 360px; overflow: auto; padding: 12px; border-radius: 10px;
+  background: var(--bg); border: 1px solid var(--line); font: 12.5px/1.5 var(--code);
+  white-space: pre-wrap; word-break: break-word;
+}
+
+/* ----------------------------------------------------------- results view */
+.result { padding: 20px 22px; border-top: 1px solid var(--line); }
+.result h3 { font: 600 1.35rem/1.2 var(--display); margin: 0 0 2px; }
+.result .orig { color: var(--ink-soft); margin: 0 0 12px; font-size: 0.92rem; }
+blockquote.script {
+  margin: 0 0 14px; padding: 4px 0 4px 16px; border-left: 3px solid var(--moss);
+  font: 1.05rem/1.65 var(--display); max-width: 68ch; white-space: pre-wrap;
+}
+.players { display: grid; gap: 10px; max-width: 640px; }
+.player { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; align-items: center; }
+.player span { color: var(--ink-soft); font-size: 0.92rem; }
+.player audio { width: 100%; height: 36px; }
+.result .acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  background: var(--ink); color: var(--panel); padding: 10px 16px; border-radius: 10px;
+  max-width: min(560px, calc(100vw - 32px)); font-size: 0.95rem; z-index: 10;
+}
+.empty { padding: 22px; color: var(--ink-soft); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>Cat Planet</h1>
+      <p>Pick the settings, check you're ready, and press start.</p>
+    </div>
+    <div class="modes" role="group" aria-label="What to run">
+      <button type="button" data-mode="batch" aria-pressed="true">Batch: whole inbox</button>
+      <button type="button" data-mode="single" aria-pressed="false">Single video</button>
+    </div>
+  </header>
+
+  <!-- ============================================================ setup -->
+  <main id="setup" class="layout">
+    <div>
+      <div class="panel profile">
+        <label for="profile">Profile</label>
+        <select id="profile"></select>
+        <span class="spacer"></span>
+        <button type="button" class="btn small" id="p-new">Save as new…</button>
+        <button type="button" class="linkish quiet" id="p-del">Delete profile</button>
+        <div class="changerow" id="changerow" hidden>
+          <span class="changes" id="changes"></span>
+          <button type="button" class="btn small primary" id="p-save">Save to this profile</button>
+          <button type="button" class="linkish" id="p-reset">Undo changes</button>
+        </div>
+        <div id="p-name-row" hidden style="flex-basis:100%;display:flex;gap:8px">
+          <input type="text" id="p-name" placeholder="Name for the new profile" style="flex:1" aria-label="New profile name">
+          <button type="button" class="btn small primary" id="p-name-ok">Save</button>
+          <button type="button" class="btn small" id="p-name-cancel">Cancel</button>
+        </div>
+      </div>
+      <form class="panel settings" id="form" onsubmit="return false"></form>
+    </div>
+
+    <aside class="side">
+      <div class="panel">
+        <h2>Ready check</h2>
+        <ul class="checks" id="checks"></ul>
+      </div>
+      <div class="panel">
+        <div class="cmdbar"><h2>Will run</h2><button type="button" class="linkish" id="copy">Copy</button></div>
+        <pre class="cmd" id="cmd">…</pre>
+        <div class="actions">
+          <button type="button" class="btn primary" id="start">Start batch</button>
+          <button type="button" class="btn" id="dry">Preview (dry run)</button>
+          <p class="why" id="why" hidden></p>
+          <p class="warnline" id="warn" hidden></p>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ============================================================== run -->
+  <main id="runview" hidden>
+    <div class="panel">
+      <div class="runhead">
+        <h2 id="run-title">Running</h2>
+        <span class="elapsed" id="run-elapsed"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger" id="stop">Stop</button>
+        <button type="button" class="btn primary" id="to-results" hidden>See results</button>
+        <button type="button" class="btn" id="back1" hidden>Back to settings</button>
+      </div>
+      <div class="cmdline"><pre class="cmd" id="run-cmd"></pre></div>
+      <ul class="clips" id="clips"></ul>
+      <details class="log" id="logbox">
+        <summary>Live log</summary>
+        <pre class="log" id="log" tabindex="0"></pre>
+        <p class="sub" id="logfile" style="color:var(--ink-soft);font-size:.88rem"></p>
+      </details>
+    </div>
+  </main>
+
+  <!-- ========================================================== results -->
+  <main id="resultsview" hidden>
+    <div class="panel">
+      <div class="runhead">
+        <h2 id="res-title">Results</h2>
+        <span class="elapsed" id="res-sub"></span>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="to-log">Show log</button>
+        <button type="button" class="btn primary" id="back2">Back to settings</button>
+      </div>
+      <div id="results"></div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+"use strict";
+/* ================================================================ helpers */
+const $ = (s, el = document) => el.querySelector(s);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid !== null && kid !== undefined && kid !== false)
+    n.append(kid.nodeType ? kid : document.createTextNode(kid));
+  return n;
+};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("catplanet." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("catplanet." + k, JSON.stringify(v)); } catch {} },
+};
+async function api(path, body) {
+  const opt = body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json", "X-CatPlanet": "1" },
+    body: JSON.stringify(body),
+  };
+  const r = await fetch(path, opt);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
+  return data;
+}
+let toastTimer;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 4200);
+}
+const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const fmtTime = s => s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+const fileUrl = rel => "/files/" + rel.split("/").map(encodeURIComponent).join("/");
+/* Show a command with each option kept on one line together with its value. */
+function renderCmd(target, argv, fallback) {
+  target.replaceChildren();
+  if (!argv || !argv.length) { target.textContent = fallback || ""; return; }
+  // A flag never breaks across lines; a long value (a path) may wrap at any point.
+  for (let i = 0; i < argv.length; i++) {
+    const t = argv[i];
+    if (i) target.append(" ");
+    if (t.startsWith("--")) {
+      target.append(el("span", { class: "flag", text: t }));
+      if (i + 1 < argv.length && !argv[i + 1].startsWith("--")) {
+        const v = argv[++i];
+        target.append(" ", el("span", { class: "val" + (v.length > 28 ? " long" : ""), text: v }));
+      }
+    } else target.append(el("span", { class: "val" + (t.length > 28 ? " long" : ""), text: t }));
+  }
+}
+const PAW = '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="16" rx="5.2" ry="4.4" fill="currentColor"/><circle cx="5.4" cy="10.2" r="2.3" fill="currentColor"/><circle cx="9.2" cy="6.2" r="2.3" fill="currentColor"/><circle cx="14.8" cy="6.2" r="2.3" fill="currentColor"/><circle cx="18.6" cy="10.2" r="2.3" fill="currentColor"/></svg>';
+const CROSS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>';
+
+/* ================================================================== state */
+const S = {
+  schema: null, fields: {}, profiles: {}, profile: null,
+  values: {}, base: {}, mode: store.get("mode", "batch"),
+  status: null, command: "", cmdError: null, view: "setup",
+  runNext: 0, runTimer: null, lastRun: null,
+};
+
+/* ============================================================= the form */
+function defaults() {
+  const d = {};
+  for (const f of S.schema.fields) d[f.key] = f.default ?? null;
+  return d;
+}
+function applies(f) {
+  if (f.mode && f.mode !== "both" && f.mode !== S.mode) return false;
+  for (const [k, want] of Object.entries(f.show || {})) {
+    const have = S.values[k];
+    if (Array.isArray(want) ? !want.includes(have) : have !== want) return false;
+  }
+  return true;
+}
+function optionList(f) {
+  if (f.kind === "toggle" || f.kind === "inverse")
+    return [[true, f.on || "On"], [false, f.off || "Off"]];
+  return f.choices || [];
+}
+function labelFor(f, v) {
+  const hit = optionList(f).find(([cv]) => same(cv, v));
+  if (hit) return hit[1];
+  for (const g of f.groups || []) { const h = g.choices.find(([cv]) => same(cv, v)); if (h) return h[1]; }
+  return v === null || v === undefined || v === "" ? "not set" : String(v);
+}
+
+function buildForm() {
+  const form = $("#form"); form.replaceChildren();
+  const bySection = {};
+  for (const f of S.schema.fields) (bySection[f.section] ||= []).push(f);
+  for (const [sid, title] of S.schema.sections) {
+    const fields = bySection[sid] || [];
+    if (!fields.length) continue;
+    if (sid === "advanced") {
+      const det = el("details", { class: "advanced group", id: "sec-advanced" });
+      if (store.get("advancedOpen", false)) det.open = true;
+      det.addEventListener("toggle", () => store.set("advancedOpen", det.open));
+      det.append(el("summary", {}, el("h2", { text: title }),
+        el("span", { class: "hint", id: "adv-hint" })));
+      let group = null;
+      for (const f of fields) {
+        if (f.group !== group) { group = f.group; det.append(el("h3", { class: "sub", "data-group": group, text: group })); }
+        det.append(fieldRow(f));
+      }
+      form.append(el("section", { class: "group" }, det));
+    } else {
+      form.append(el("section", { class: "group", id: "sec-" + sid },
+        el("h2", { text: title }), fields.map(fieldRow)));
+    }
+  }
+  refresh();
+}
+
+function fieldRow(f) {
+  const id = "f-" + f.key;
+  const row = el("div", { class: "field", "data-key": f.key });
+  const label = el("label", { for: id, text: f.label });
+  const control = el("div", { class: "control" });
+  const infoId = "i-" + f.key;
+  const info = el("button", { type: "button", class: "info", "aria-expanded": "false",
+    "aria-controls": infoId, "aria-label": `About ${f.label}`, text: "i" });
+  const infoBox = el("div", { class: "infotext", id: infoId, hidden: true },
+    el("p", { text: f.info || "No notes for this option yet." }),
+    f.flag ? el("p", { class: "now", "data-now": "" }) : null);
+  info.addEventListener("click", () => {
+    const open = info.getAttribute("aria-expanded") !== "true";
+    info.setAttribute("aria-expanded", String(open)); infoBox.hidden = !open;
+  });
+
+  if (f.kind === "text") {
+    const inp = el("input", { type: "text", id, placeholder: f.placeholder || "", autocomplete: "off", spellcheck: "false" });
+    inp.addEventListener("input", () => { S.values[f.key] = inp.value.trim() || null; changed(); });
+    control.append(inp);
+  } else {
+    const sel = el("select", { id });
+    if (f.key === "video") sel.append(el("option", { value: "null", text: "Pick a video…" }));
+    for (const [v, lab] of optionList(f)) sel.append(el("option", { value: JSON.stringify(v), text: lab }));
+    for (const g of f.groups || []) {
+      const og = el("optgroup", { label: g.group });
+      for (const [v, lab] of g.choices) og.append(el("option", { value: JSON.stringify(v), text: lab }));
+      sel.append(og);
+    }
+    let custom = null;
+    if (f.custom) {
+      sel.append(el("option", { value: "__custom__", text: f.custom === "number" ? "Custom number…" : "Custom…" }));
+      custom = el("input", { type: f.custom === "number" ? "number" : "text", step: "any",
+        class: "custom", "aria-label": `${f.label}, custom value`, hidden: true,
+        placeholder: f.custom === "number" ? "number" : "path or name" });
+      if (f.custom === "text") custom.classList.remove("custom");
+      custom.addEventListener("input", () => {
+        const raw = custom.value.trim();
+        S.values[f.key] = raw === "" ? null : (f.custom === "number" ? Number(raw) : raw);
+        changed();
+      });
+    }
+    sel.addEventListener("change", () => {
+      if (sel.value === "__custom__") {
+        custom.hidden = false; custom.focus();
+        const raw = custom.value.trim();
+        S.values[f.key] = raw === "" ? null : (f.custom === "number" ? Number(raw) : raw);
+      } else {
+        if (custom) custom.hidden = true;
+        S.values[f.key] = JSON.parse(sel.value);
+      }
+      changed();
+    });
+    control.append(sel);
+    if (custom) control.append(custom);
+    if (f.key === "reference_audio") {
+      const play = el("button", { type: "button", class: "icon", "aria-label": "Play the voice clip", text: "Play" });
+      const audio = new Audio();
+      play.addEventListener("click", () => {
+        const v = S.values.reference_audio;
+        if (!v) return toast("This uses Chatterbox's built-in voice, so there's no clip to play.");
+        if (!audio.paused) { audio.pause(); play.textContent = "Play"; return; }
+        audio.src = fileUrl(v); audio.play().then(() => (play.textContent = "Pause"))
+          .catch(() => toast("That clip can't be played here. It may be outside data/."));
+      });
+      audio.addEventListener("ended", () => (play.textContent = "Play"));
+      control.append(play);
+    }
+  }
+  row.append(label, control, info, infoBox);
+  return row;
+}
+
+function syncControls() {
+  for (const f of S.schema.fields) {
+    const row = $(`.field[data-key="${f.key}"]`); if (!row) continue;
+    const v = S.values[f.key];
+    if (f.kind === "text") {
+      const inp = $("input", row); if (document.activeElement !== inp) inp.value = v ?? "";
+      continue;
+    }
+    const sel = $("select", row), custom = $("input", row);
+    const match = [...sel.options].find(o => o.value !== "__custom__" && same(JSON.parse(o.value), v));
+    if (match) { sel.value = match.value; if (custom) custom.hidden = true; }
+    else if (f.custom) {
+      sel.value = "__custom__"; custom.hidden = false;
+      if (document.activeElement !== custom) custom.value = v ?? "";
+    }
+  }
+}
+
+function refresh() {
+  syncControls();
+  let advChanged = 0, total = 0;
+  for (const f of S.schema.fields) {
+    const row = $(`.field[data-key="${f.key}"]`); if (!row) continue;
+    const show = applies(f);
+    row.hidden = !show;
+    const isChanged = show && f.key !== "video" && !same(S.values[f.key], S.base[f.key]);
+    row.classList.toggle("changed", isChanged);
+    if (isChanged) { total++; if (f.section === "advanced") advChanged++; }
+    const now = $("[data-now]", row);
+    if (now) now.textContent = `Your profile uses: ${labelFor(f, S.base[f.key])}. The pipeline's own default is: ${labelFor(f, f.default)}.`;
+  }
+  // hide group headings with no visible fields, and empty sections
+  document.querySelectorAll("h3.sub").forEach(h => {
+    let n = h.nextElementSibling, any = false;
+    while (n && !n.matches("h3.sub")) { if (n.matches(".field") && !n.hidden) any = true; n = n.nextElementSibling; }
+    h.hidden = !any;
+  });
+  document.querySelectorAll("section.group").forEach(sec => {
+    sec.hidden = ![...sec.querySelectorAll(".field")].some(r => !r.hidden);
+  });
+  const advVisible = S.schema.fields.filter(f => f.section === "advanced" && applies(f)).length;
+  $("#adv-hint").textContent = advChanged
+    ? `${advChanged} changed from your profile`
+    : `${advVisible} more options, closed by default`;
+  const ch = $("#changes");
+  $("#changerow").hidden = !total;
+  ch.textContent = `${total} change${total > 1 ? "s" : ""} from “${S.profile}”, marked in ochre`;
+  $("#start").textContent = S.mode === "batch" ? "Start batch" : "Narrate this video";
+  $("#dry").hidden = S.mode !== "batch";
+  document.querySelectorAll(".modes button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === S.mode)));
+}
+
+let cmdTimer, statusTimer;
+function changed() {
+  refresh();
+  clearTimeout(cmdTimer); cmdTimer = setTimeout(updateCommand, 150);
+  clearTimeout(statusTimer); statusTimer = setTimeout(updateStatus, 300);
+  store.set("draft", { profile: S.profile, values: S.values });
+}
+
+async function updateCommand() {
+  try {
+    const r = await api("/api/command", { mode: S.mode, values: S.values });
+    S.command = r.command || ""; S.argv = r.argv || null; S.cmdError = r.error || null;
+  } catch (e) { S.command = ""; S.argv = null; S.cmdError = e.message; }
+  renderCmd($("#cmd"), S.cmdError ? null : S.argv, S.cmdError || "");
+  gate();
+}
+
+/* ======================================================== ready check */
+async function updateStatus() {
+  const q = new URLSearchParams({
+    music_server: S.values.music_server || "",
+    reference_audio: S.values.reference_audio || "",
+    video: S.values.video || "",
+  });
+  try { S.status = await api("/api/status?" + q); } catch { return; }
+  drawChecks(); gate();
+}
+
+function drawChecks() {
+  const st = S.status, ul = $("#checks"); if (!st) return;
+  const items = [];
+  const item = (cls, main, sub, extra) => el("li", {}, el("span", { class: "dot " + cls }),
+    el("div", {}, el("div", { class: "row" }, el("span", { text: main }), extra || null),
+      sub ? el("div", { class: "sub", text: sub }) : null));
+
+  items.push(st.ollama
+    ? item("ok", "Ollama is running")
+    : item("bad", "Ollama isn't answering",
+        "Start it with: brew services start ollama. Stages that already finished can still be reused."));
+
+  const m = st.music, needMusic = S.values.score;
+  if (!needMusic) items.push(item("off", "Music server not needed", "Music is off for this run."));
+  else if (m.state === "running") items.push(item("ok", "Music server is running", null,
+      m.managed ? el("button", { type: "button", class: "linkish", text: "Stop it", onclick: () => musicServer("stop") }) : null));
+  else if (m.state === "starting") items.push(item("warn", `Music server starting (${fmtTime(m.seconds || 0)})`,
+      "The first start loads about 5 GB. Start unlocks when it's ready."));
+  else items.push(item(m.state === "crashed" ? "bad" : "warn",
+      m.state === "crashed" ? "The music server stopped unexpectedly" : "Music server is off",
+      m.state === "crashed" ? `See ${m.log} for what went wrong.` : "Music needs it. Start it here, or turn music off.",
+      m.launcher_found ? el("button", { type: "button", class: "btn small primary", text: "Start it", onclick: () => musicServer("start") }) : null));
+
+  if (S.values.narrate && S.values.engine === "chatterbox") {
+    const ref = S.values.reference_audio;
+    if (!ref) items.push(item("ok", "Using Chatterbox's built-in voice"));
+    else if (st.reference_audio.exists) items.push(item("ok", `Voice clip found: ${ref.split("/").pop()}`));
+    else items.push(item("bad", "Voice clip not found", ref));
+  }
+
+  if (S.mode === "batch") {
+    const n = st.inbox.length;
+    const li = n
+      ? item("ok", `Inbox: ${n} video${n > 1 ? "s" : ""}`)
+      : item("bad", "The inbox is empty", "Drop videos into data/inbox/ and they'll appear here.");
+    if (n) {
+      const list = el("ul", { class: "queue" }, st.inbox.slice(0, 8).map(v =>
+        el("li", {}, v.name, v.note ? el("span", { text: ` (earlier attempt ${v.note})` }) : null)));
+      if (n > 8) list.append(el("li", { text: `and ${n - 8} more` }));
+      $("div", li).append(list);
+    }
+    items.push(li);
+  } else {
+    const v = S.values.video;
+    items.push(!v ? item("bad", "No video picked yet", "Choose one under This run.")
+      : st.video.exists ? item("ok", `Video: ${v.split("/").pop()}`, `Results will be saved in ${st.video.saves_to}`)
+      : item("bad", "Video not found", v));
+  }
+  ul.replaceChildren(...items);
+}
+
+function gate() {
+  const st = S.status; let why = null, warn = null;
+  if (S.cmdError) why = S.cmdError;
+  else if (st) {
+    if (S.mode === "batch" && !st.inbox.length) why = "The inbox is empty. Drop videos into data/inbox/ first.";
+    else if (S.mode === "single" && (!S.values.video || !st.video.exists)) why = "Pick a video that exists.";
+    else if (S.values.narrate && S.values.engine === "chatterbox" && S.values.reference_audio && !st.reference_audio.exists)
+      why = "The voice clip can't be found. Pick another, or use the built-in voice.";
+    else if (S.values.score && st.music.state !== "running")
+      why = st.music.state === "starting" ? "Waiting for the music server to finish starting."
+        : "Start the music server first, or turn music off.";
+    if (!st.ollama) warn = "Ollama isn't answering. New descriptions and scripts will fail until it's running.";
+  }
+  $("#start").disabled = !!why;
+  $("#dry").disabled = !!S.cmdError || (st && S.mode === "batch" && !st.inbox.length);
+  $("#why").hidden = !why; $("#why").textContent = why || "";
+  $("#warn").hidden = !warn; $("#warn").textContent = warn || "";
+}
+
+async function musicServer(action) {
+  try {
+    const r = await api("/api/music-server", { action, url: S.values.music_server || "" });
+    toast(r.message);
+  } catch (e) { toast(e.message); }
+  updateStatus();
+}
+
+/* ============================================================= profiles */
+function drawProfiles() {
+  const sel = $("#profile"); sel.replaceChildren();
+  for (const name of Object.keys(S.profiles)) sel.append(el("option", { value: name, text: name }));
+  sel.value = S.profile;
+  $("#p-del").disabled = Object.keys(S.profiles).length < 2;
+}
+function loadProfile(name, keepDraft) {
+  S.profile = name;
+  S.base = { ...defaults(), ...(S.profiles[name] || {}) };
+  const video = S.values.video ?? null;
+  S.values = keepDraft ? { ...S.base, ...keepDraft } : { ...S.base, video };
+  drawProfiles(); changed();
+}
+async function saveProfile(name) {
+  try {
+    const r = await api("/api/profiles", { action: "save", name, values: S.values });
+    S.profiles = r.profiles; S.profile = r.last_used;
+    S.base = { ...defaults(), ...S.profiles[S.profile] };
+    drawProfiles(); changed(); toast(`Saved the "${S.profile}" profile.`);
+  } catch (e) { toast(e.message); }
+}
+
+/* ================================================================== runs */
+function showView(v) {
+  S.view = v;
+  $("#setup").hidden = v !== "setup"; $("#runview").hidden = v !== "run"; $("#resultsview").hidden = v !== "results";
+  window.scrollTo({ top: 0 });
+}
+
+async function start(dry) {
+  try {
+    await api("/api/run", { mode: S.mode, values: S.values, dry_run: dry, profile: S.profile });
+  } catch (e) { return toast(e.message); }
+  S.runNext = 0; $("#log").textContent = "";
+  $("#logbox").open = dry || store.get("logOpen", false);
+  showView("run"); pollRun();
+}
+
+async function pollRun() {
+  clearTimeout(S.runTimer);
+  let r;
+  try { r = await api("/api/run?since=" + S.runNext); } catch { S.runTimer = setTimeout(pollRun, 2000); return; }
+  if (r.state === "idle") return;
+  S.lastRun = r;
+  drawRun(r);
+  if (r.state !== "finished") S.runTimer = setTimeout(pollRun, 1000);
+  else {
+    updateStatus();
+    if (!r.dry_run && !r._shown) { r._shown = true; showResults(); }
+  }
+}
+
+function drawRun(r) {
+  const n = r.clips.length;
+  const cur = r.clips.findIndex(c => c.state === "running");
+  const word = r.mode === "batch" ? (r.dry_run ? "Dry run of the batch" : "Batch") : "Single video";
+  let title;
+  if (r.state === "running") title = r.mode === "batch" && !r.dry_run
+      ? `Running the batch: clip ${cur >= 0 ? cur + 1 : 1} of ${n}` : `Running: ${word.toLowerCase()}`;
+  else if (r.state === "stopping") title = "Stopping after the current step is saved…";
+  else title = r.dry_run ? "Dry run finished" : r.stopped ? "Stopped" : r.exit_code === 0 ? "Finished" : "Finished with problems";
+  $("#run-title").textContent = title;
+  $("#run-elapsed").textContent = fmtTime(r.elapsed);
+  renderCmd($("#run-cmd"), r.argv, r.command);
+  $("#stop").hidden = r.state === "finished";
+  $("#stop").textContent = r.state === "stopping" ? "Force stop" : "Stop";
+  $("#to-results").hidden = r.state !== "finished" || r.dry_run;
+  $("#back1").hidden = r.state !== "finished";
+  $("#logfile").textContent = `Full log: ${r.log_file}`;
+
+  const ul = $("#clips");
+  if (r.dry_run) ul.replaceChildren();
+  else ul.replaceChildren(...r.clips.map(clipRow));
+  if (r.lines.length) {
+    const box = $("#log"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 8;
+    box.append(r.lines.join("\n") + "\n"); S.runNext = r.next;
+    if (atEnd) box.scrollTop = box.scrollHeight;
+  }
+}
+
+function clipRow(c) {
+  const name = c.version != null ? `Clip ${c.version}` : c.name;
+  const sub = c.version != null ? c.name : (c.state === "waiting" ? "Waiting" : "");
+  const trail = el("ol", { class: "trail", "aria-label": "Stages" }, c.stages.map(s => {
+    let state = s.state;
+    if (c.state === "failed" || c.state === "stopped") if (state === "active") state = "failed";
+    const li = el("li", { class: state });
+    const mark = el("span", { class: "mark" });
+    mark.innerHTML = state === "done" || state === "reused" ? PAW : state === "failed" ? CROSS : "";
+    const word = { done: "made", reused: "kept from before", active: "working", todo: "to do", failed: "stopped here" }[state];
+    li.append(mark, el("span", { class: "lbl", text: s.detail ? `${s.label} ${s.detail}` : s.label }),
+      el("span", { class: "sr", text: `: ${word}` }));
+    li.title = `${s.label}: ${word}`;
+    return li;
+  }));
+  const note = c.state === "done" ? "Done." : c.state === "failed" || c.state === "stopped" ? (c.why ? c.why[0].toUpperCase() + c.why.slice(1) + "." : "Stopped.")
+    : c.state === "running" ? (c.step ? `Working on ${c.step}.` : "Starting…") : "";
+  return el("li", { class: "clip " + c.state },
+    el("div", { class: "who" }, name, sub ? el("small", { text: sub }) : null),
+    trail, note ? el("div", { class: "note", text: note }) : null);
+}
+
+async function showResults() {
+  let r; try { r = await api("/api/results"); } catch (e) { return toast(e.message); }
+  const ok = r.clips.filter(c => c.state === "done").length;
+  const bad = r.clips.filter(c => c.state === "failed" || c.state === "stopped").length;
+  const left = r.clips.length - ok - bad;
+  $("#res-title").textContent = r.stopped ? "Stopped" : bad ? "Finished with problems" : "Finished";
+  $("#res-sub").textContent = `${ok} done` + (bad ? `, ${bad} stopped or failed` : "")
+    + (left ? `, ${left} not started` : "") + ` in ${fmtTime(r.elapsed)}`;
+  const box = $("#results"); box.replaceChildren();
+  for (const c of r.clips) {
+    const title = c.version != null ? `Clip ${c.version}` : c.name;
+    const sec = el("section", { class: "result" }, el("h3", { text: title }),
+      el("p", { class: "orig", text: c.version != null ? `From ${c.name}` + (c.folder ? `, saved in ${c.folder}/` : "")
+        : (c.folder ? `Saved in ${c.folder}/` : "") }));
+    if (c.state === "failed" || c.state === "stopped") {
+      const why = c.why ? c.why[0].toUpperCase() + c.why.slice(1) + "." : "This clip didn't finish.";
+      sec.append(el("p", { class: "why", text: why + " Retry picks up from there." }));
+    }
+    else if (c.state === "waiting")
+      sec.append(el("p", { class: "orig", text: "Not started in this run. It's still in the inbox." }));
+    if (c.script) sec.append(el("blockquote", { class: "script", text: c.script.trim() }));
+    const players = el("div", { class: "players" });
+    const add = (label, rel) => players.append(el("div", { class: "player" }, el("span", { text: label }),
+      c.servable ? el("audio", { controls: true, preload: "none", src: fileUrl(rel) }) : el("code", { text: rel })));
+    if (c.voiceover) add("Voiceover", c.voiceover);
+    c.music.forEach(m => {
+      const take = m.match(/\.music\.(\d+)\.wav$/);
+      add(take ? `Music take ${take[1]}` : "Music", m);
+    });
+    if (players.children.length) sec.append(players);
+    const acts = el("div", { class: "acts" });
+    if (c.folder) acts.append(el("button", { type: "button", class: "btn small", text: "Show in Finder",
+      onclick: async () => { try { const x = await api("/api/reveal", { path: c.folder }); if (x.message) toast(x.message); } catch (e) { toast(e.message); } } }));
+    if (c.state === "failed" || c.state === "stopped")
+      acts.append(el("button", { type: "button", class: "btn small primary", text: "Retry (resume)",
+        onclick: () => { S.values.retry = "resume"; changed(); start(false); } }));
+    if (acts.children.length) sec.append(acts);
+    box.append(sec);
+  }
+  if (!r.clips.length) box.append(el("p", { class: "empty", text: "Nothing ran." }));
+  showView("results");
+}
+
+/* ================================================================= start */
+async function init() {
+  try {
+    S.schema = await api("/api/schema");
+    const p = await api("/api/profiles");
+    S.profiles = p.profiles; S.profile = p.last_used in p.profiles ? p.last_used : Object.keys(p.profiles)[0];
+  } catch (e) {
+    document.body.replaceChildren(el("p", { class: "empty", text: "The control panel can't reach its server. Is python app.py still running? " + e.message }));
+    return;
+  }
+  for (const f of S.schema.fields) S.fields[f.key] = f;
+  const draft = store.get("draft", null);
+  S.base = { ...defaults(), ...(S.profiles[S.profile] || {}) };
+  S.values = { ...S.base };
+  if (draft && draft.profile in S.profiles) {
+    S.profile = draft.profile; S.base = { ...defaults(), ...S.profiles[S.profile] };
+    S.values = { ...S.base, ...draft.values };
+  }
+  drawProfiles(); buildForm(); changed();
+
+  $("#profile").addEventListener("change", e => loadProfile(e.target.value));
+  $("#p-reset").addEventListener("click", () => loadProfile(S.profile));
+  $("#p-save").addEventListener("click", () => saveProfile(S.profile));
+  $("#p-new").addEventListener("click", () => { $("#p-name-row").hidden = false; $("#p-name").focus(); });
+  $("#p-name-cancel").addEventListener("click", () => { $("#p-name-row").hidden = true; });
+  $("#p-name-ok").addEventListener("click", () => {
+    const n = $("#p-name").value.trim(); if (!n) return toast("Give the profile a name first.");
+    $("#p-name-row").hidden = true; $("#p-name").value = ""; saveProfile(n);
+  });
+  $("#p-name").addEventListener("keydown", e => { if (e.key === "Enter") $("#p-name-ok").click(); });
+  $("#p-del").addEventListener("click", async () => {
+    const name = S.profile;
+    if ($("#p-del").dataset.armed !== name) {
+      $("#p-del").dataset.armed = name; $("#p-del").textContent = `Click again to delete “${name}”`;
+      setTimeout(() => { $("#p-del").dataset.armed = ""; $("#p-del").textContent = "Delete profile"; }, 3000);
+      return;
+    }
+    const r = await api("/api/profiles", { action: "delete", name });
+    S.profiles = r.profiles; $("#p-del").textContent = "Delete profile"; $("#p-del").dataset.armed = "";
+    loadProfile(r.last_used); toast(`Deleted the "${name}" profile.`);
+  });
+  document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => {
+    S.mode = b.dataset.mode; store.set("mode", S.mode); changed();
+  }));
+  $("#copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(S.command); toast("Copied the command."); }
+    catch { toast("Copy didn't work here; select the text instead."); }
+  });
+  $("#start").addEventListener("click", () => start(false));
+  $("#dry").addEventListener("click", () => start(true));
+  $("#stop").addEventListener("click", async () => toast((await api("/api/stop", {})).message));
+  $("#back1").addEventListener("click", () => showView("setup"));
+  $("#back2").addEventListener("click", () => showView("setup"));
+  $("#to-results").addEventListener("click", showResults);
+  $("#to-log").addEventListener("click", () => { showView("run"); $("#logbox").open = true; });
+  $("#logbox").addEventListener("toggle", () => store.set("logOpen", $("#logbox").open));
+  setInterval(() => { if (S.view === "setup") updateStatus(); }, 4000);
+
+  // A run may already be going (for example after reloading the page).
+  const r = await api("/api/run?since=0").catch(() => ({ state: "idle" }));
+  if (r.state !== "idle" && r.state !== "finished") { S.runNext = 0; showView("run"); pollRun(); }
+}
+init();
+</script>
+</body>
+</html>
