@@ -5,12 +5,21 @@
     {
       "name": "Whiskers",
       "pronouns": "she/her",
-      "appearance": "orange tabby with a white chest and white front paws. Striped tail with a darker tip. Slim build."
+      "appearance": "orange tabby with a white chest and white front paws. Striped tail with a darker tip. Slim build.",
+      "personality": "bold and greedy. First to the food bowl, convinced every closed door is hiding something from her."
     },
     {
       "name": "Shadow",
       "pronouns": "he/him",
-      "appearance": "solid grey cat with no markings and green eyes. Large, stocky build."
+      "appearance": "solid grey cat with no markings and green eyes. Large, stocky build.",
+      "personality": "lazy and dignified. Treats every sunbeam as his personal property and every vacuum as a mortal enemy."
     }
+  ],
+  "priority_moments": [
+    "The cats play fighting",
+    "One of the cats doing a weird, unusual move",
+    "The cats staring at something in unison",
+    "The cats having the zoomies",
+    "A cat accepting pets from a human"
   ]
 }

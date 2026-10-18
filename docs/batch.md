@@ -10,6 +10,7 @@ data/outputs/53/         everything for clip 53:
     53.mov                 the video, moved here once the run succeeds
     53.description.txt     what the vision model saw (stage 1)
     53.script.txt          the narration script (stage 2)
+    53.script_drafts.txt   every draft stage 2 wrote, and why the script won
     53.music_plan.json     the music caption, tempo and key (stage 2b)
     53.voiceover.wav       the voiceover (stage 3)
     53.music.1.wav ...     the music takes (stage 4)

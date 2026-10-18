@@ -20,6 +20,10 @@ You should see a paragraph describing what the cat is doing, its posture, the su
 
 **The frames don't fit in the model's context window.** Either raise `--num-ctx` or send fewer frames with `--max-frames`. Each frame costs about 450 to 500 tokens. Fewer frames is the cheaper fix and usually loses little detail.
 
+**Stage 1 takes half an hour, or says "the vision model returned an empty description".** MiniCPM-V 4.5 has a "thinking" mode that Ollama turns on by default. Left on, the model can think until its context is full and never write the description; one clip spent 30 minutes this way. Stage 1 now turns thinking off and caps the reply at 1,536 tokens, and the pipeline stops at stage 1 rather than writing a script from an empty description. If you see the error, run the clip again. If you change `--vision-model` and the new model refuses the thinking setting, stage 1 retries without it.
+
+**The description repeats one frame over and over, or says it "hit the token cap".** The model got stuck in a loop. Stage 1 asks for 3 to 6 key moments rather than a frame-by-frame account, which stops this in normal use, and the 1,536-token cap limits the damage if it does happen. If it keeps happening on a clip, run it again or lower `--max-frames`. As a last resort, raise `REPEAT_PENALTY` in `catplanet/describe_video.py` to 1.05; higher values make the description read worse (long run-on sentences, cats called "both animals").
+
 **Descriptions are too generic.** Edit the prompt in `catplanet/describe_video.py`. The more specific you are about what to look for (tail position, pupil size, interactions with objects), the more useful the description is for script-writing.
 
 **`espeak-ng` not found.** Kokoro needs it to generate phonemes. Install it with `brew install espeak-ng` and try again.

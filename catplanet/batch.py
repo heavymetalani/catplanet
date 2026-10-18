@@ -13,6 +13,7 @@ Layout
         7.mov                        the video, moved here once the run succeeds
         7.description.txt            what the vision model saw
         7.script.txt                 the narration script
+        7.script_drafts.txt          every draft, and why the script won
         7.music_plan.json            the music caption, tempo and key
         7.voiceover.wav              the narrated voiceover
         7.music.1.wav ...            the string quartet takes

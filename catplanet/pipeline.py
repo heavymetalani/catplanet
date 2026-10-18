@@ -130,6 +130,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Leave out the spoken title at the start of the script.",
     )
+    ap.add_argument(
+        "--drafts",
+        type=int,
+        default=generate_script.DEFAULT_DRAFTS,
+        help=(f"Script drafts to write before keeping the funniest (default: "
+              f"{generate_script.DEFAULT_DRAFTS}). 1 writes a single draft."),
+    )
 
     # Where outputs go, and resume
     ap.add_argument(
@@ -384,6 +391,7 @@ def main() -> int:
 
     desc_path = out("description.txt")
     script_path = out("script.txt")
+    drafts_path = out("script_drafts.txt")
     plan_path = out("music_plan.json")
     voice_target = args.audio_out if args.audio_out is not None else out("voiceover.wav")
     music_path = args.music_out if args.music_out is not None else out("music.wav")
@@ -430,10 +438,12 @@ def main() -> int:
         progress.file_fingerprint(args.video) if tracked else None,
         args.vision_model, args.fps, args.max_frames, args.num_ctx,
         describe_video.DEFAULT_PROMPT,           # includes your cats
+        describe_video.GENERATION_SETTINGS,      # thinking off, output cap
     )
     fp_script = fp("script", fp_describe, args.style, args.text_model,
                    args.temperature, length,
-                   generate_script.prompt_signature(args.style, not args.no_title))
+                   generate_script.prompt_signature(args.style, not args.no_title,
+                                                    args.drafts))
     fp_plan = fp("music_plan", fp_describe, music_style, args.text_model,
                  not args.no_music_llm, length, args.music_bpm)
     if args.engine == "kokoro":
@@ -447,7 +457,8 @@ def main() -> int:
             "cfg_weight": args.cfg_weight,
             "max_chars": args.max_chars,
         }
-    fp_voice = fp("voice", fp_script, voice_settings, args.max_pause, args.target_lufs)
+    fp_voice = fp("voice", fp_script, voice_settings, args.max_pause,
+                  generate_voice.PAUSE_SETTINGS, args.target_lufs)
 
     clip.start_run(
         f"style={args.style} narrate={args.narrate} engine={args.engine} "
@@ -463,7 +474,10 @@ def main() -> int:
     try:
         # ---- stage 1: describe the video ------------------------------------
         clip.step("stage 1 (describe the video)")
-        if clip.reusable("describe", fp_describe, desc_path):
+        # An empty saved description is never reused: it would leave stage 2
+        # nothing to go on, and the script would be made up.
+        if (clip.reusable("describe", fp_describe, desc_path)
+                and desc_path.read_text().strip()):
             description = desc_path.read_text()
             clip.mark("describe", "reused")
             print(f"[stage 1] reusing saved description ({desc_path.name})",
@@ -508,27 +522,40 @@ def main() -> int:
             print(f"[stage 2] reusing saved script ({script_path.name})",
                   file=sys.stderr, flush=True)
         else:
-            clip.keep_old(script_path)
+            clip.keep_old(script_path, drafts_path)
             print(f"[stage 2] writing {args.style} voiceover ({length}s target)...",
                   file=sys.stderr, flush=True)
             t2 = time.perf_counter()
+
+            def on_step(msg: str) -> None:
+                clip.step(f"stage 2 ({msg})")
+                print(f"[stage 2] {msg}...", file=sys.stderr, flush=True)
+
             try:
-                script = generate_script.generate_script(
+                result = generate_script.generate_script(
                     description=description,
                     video_length=length,
                     style=args.style,
                     model=args.text_model,
                     temperature=args.temperature,
                     title=not args.no_title,
+                    drafts=args.drafts,
+                    log=on_step,
                 )
             except Exception as e:
                 return fail(3, f"stage 2 failed: {e}")
+            script = result.script
+            if len(result.drafts) > 1:
+                print(f"[stage 2] kept draft {result.winner + 1} of "
+                      f"{len(result.drafts)}: {result.reason}", file=sys.stderr)
             print(f"[stage 2] done in {time.perf_counter() - t2:.1f}s",
                   file=sys.stderr, flush=True)
             if tracked or args.save_script:
                 progress.write_text(script_path, script)
-                print(f"[info] saved script to {script_path}", file=sys.stderr)
-            clip.record("script", fp_script, script_path)
+                progress.write_text(drafts_path, result.report())
+                print(f"[info] saved script to {script_path} (every draft in "
+                      f"{drafts_path.name})", file=sys.stderr)
+            clip.record("script", fp_script, script_path, drafts_path)
 
         # ---- stage 2b: music plan (optional) ---------------------------------
         # This runs here, not next to stage 4, because it uses the same Ollama

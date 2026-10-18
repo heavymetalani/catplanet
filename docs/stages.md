@@ -25,7 +25,7 @@ Every output is optional and is written next to the video:
 - `--save-description` writes `<name>.description.txt` (the stage 1 output). Reuse it to iterate on stage 2 quickly.
 - `--save-script` writes `<name>.script.txt` (the stage 2 output). Reuse it to iterate on stage 3 quickly.
 - `--narrate` writes `<name>.voiceover.wav` (stage 3).
-  - Pauses between sentences are capped at 0.35 seconds by default. The Attenborough prompt asks for ellipses and paragraph breaks as dramatic beats, and both voice engines honor every one, which sounds like dead air in a short clip. Tighten it with `--max-pause 0.25`, or pass `--max-pause 0` to keep the engine's own timing.
+  - Pauses between sentences are capped at 0.45 seconds by default. The Attenborough prompt asks for ellipses and paragraph breaks as dramatic beats, and both voice engines honor every one, which sounds like dead air in a short clip. A pause counts even when it isn't silent: Chatterbox fills its pauses with the breath and room tone of your reference clip, so anything more than 28 dB under the speech level is treated as pause. Silence before the first word is trimmed to 0.15 seconds and after the last word to 0.5 seconds. Tighten it with `--max-pause 0.35`, or pass `--max-pause 0` to keep the engine's own timing. To change what counts as a pause, edit `PAUSE_BELOW_SPEECH_DB` in `catplanet/generate_voice.py`: lower it (25 catches more of the breathy gaps) to trim more, raise it (30) if a soft word ending ever gets clipped.
   - The voiceover is normalized to −16 LUFS (`--target-lufs`), the usual level for podcasts and short-form video. Neither engine does this on its own; Kokoro writes at about −24 LUFS. It matters for the music too, because the music is leveled relative to this file. Speech is peaky, so the true-peak guard often lands a little short of the target rather than clipping, which is expected. `--target-lufs 0` skips normalization.
 - `--score` writes `<name>.music.wav` (stage 4). See [music.md](music.md).
 
@@ -45,6 +45,8 @@ python pipeline.py data/scratch/zoomies.mov --narrate --score --resume
 python -m catplanet.describe_video data/scratch/cat_clip.mov
 python -m catplanet.describe_video data/scratch/cat_clip.mov > data/scratch/cat_clip.description.txt
 ```
+
+The description is laid out as a one-line setting, then 3 to 6 key moments in order (each labelled start, early, middle, late or end), then the funniest moment. Moments rather than frames keep the description short, which makes stages 1 and 2 faster, and stop the model from getting stuck restating one frame.
 
 Useful options:
 
@@ -67,9 +69,34 @@ python -m catplanet.describe_video data/scratch/zoomies.mov \
 
 There are four styles: `attenborough` (the default, a dry documentary), `sports` (excitable play-by-play), `noir` (a hardboiled detective) and `reality_tv` (a dramatic confessional). To change how a style sounds, edit its prompt in the `STYLES` dictionary at the top of `catplanet/generate_script.py`.
 
+Stage 2 works like a comedy writers' room, in four steps:
+
+1. **Facts.** A careful, low-temperature call writes a beat sheet: the main action the script must be about, and 3 to 6 plain sentences on what happens, in order.
+2. **Pitch.** One call pitches a different comic angle for each draft, each built on the main action. Each angle takes a different lens: raising the stakes, playing the cats' personalities off each other, and a misdirection with a deflating punchline.
+3. **Draft.** One draft of the narration is written around each angle. Every draft must say the main action plainly and narrate only actions from the facts. Jokes can exaggerate why the cats do things, never what they do: lying on her back doesn't become a backflip.
+4. **Judge.** One last call checks every draft (does it show the main action? does it invent or upgrade any action?) and ranks them by funniness. The code, not the model, keeps the funniest draft that passed. If every draft fails, one more "faithful" draft (no angle, facts only) is written and checked; if that fails too, the funniest draft is kept with a warning.
+
+### Priority moments
+
+Some moments do better with your audience than others. List them under `priority_moments` in `config/local_settings.json`:
+
+```json
+"priority_moments": [
+  "The cats play fighting",
+  "One of the cats doing a weird, unusual move",
+  "The cats staring at something in unison",
+  "The cats having the zoomies",
+  "A cat accepting pets from a human"
+]
+```
+
+When the beat sheet finds that a clip clearly shows one of them, that moment becomes the main action, so every draft is built around it. If a clip shows several, the one listed first wins, so put your favourite at the top. A moment only counts when the description plainly describes it. Editing the list redoes the script on the next resumed or batch run.
+
+`--drafts 3` is the default; `--drafts 1` writes a single draft and skips the judging, which is the quickest way to iterate. `--drafts-out drafts.txt` saves the facts (and the priority moment, if one matched), every angle and draft, each draft's check, the funniness ranking and why the winner won. `pipeline.py` and `batch.py` always save this as `<name>.script_drafts.txt` next to the script, so if you prefer a different draft you can paste it into `<name>.script.txt` and re-run stage 3. Each extra draft adds roughly 10 to 30 seconds, and the beat sheet another 10 to 15.
+
 The script opens with a short, funny title for the clip (two to six words, in the narrator's voice) on its own line, followed by a blank line and the narration. Stage 3 reads the whole script, so the narrator says the title first. To leave room for it, the narration aims for 5 fewer words than the clip length alone would suggest. `--no-title` leaves the title out; `pipeline.py` and the control panel ("Spoken title") have the same switch.
 
-The script writer is also given your cats' names and pronouns from `config/local_settings.json`, and is told to call each cat by the name the description uses, never "the creature". A cat the description calls "one of the cats" stays unnamed.
+The script writer is also given your cats' names, pronouns and personalities from `config/local_settings.json` (see [cats.md](cats.md#personalities)), and is told to call each cat by the name the description uses, never "the creature". A cat the description calls "one of the cats" stays unnamed.
 
 Other options: `--temperature 0.9` (raise to 1.1 for wilder output, drop to 0.7 for safer output), `--wps 2.5` (the target speaking pace in words per second) and `--model qwen2.5:14b` (a different text model).
 
