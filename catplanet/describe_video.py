@@ -5,7 +5,8 @@ describe_video.py
 Extract frames from a cat video and ask MiniCPM-V 4.5 (running locally
 via Ollama) what is happening in the clip. The output is a vivid,
 concrete description of the action, body language, and environment,
-intended to be fed into a second-stage script-writing model.
+laid out as 3 to 6 key moments in order, intended to be fed into a
+second-stage script-writing model.
 
 Cat identification
 ------------------
@@ -52,19 +53,66 @@ DEFAULT_MODEL = "openbmb/minicpm-v4.5"
 # --max-frames; both work, and fewer frames is the cheaper of the two.
 DEFAULT_NUM_CTX = 16384
 
+# MiniCPM-V 4.5 can "think" before it answers, and Ollama turns that on unless
+# told otherwise. Left on, it can think until the context is full and never
+# write the description: one clip spent 30 minutes on 21,000 tokens of
+# thinking and came back empty. The description needs no reasoning, so it's off.
+THINK = False
+
+# A cap on how much the model may write, so a runaway reply costs a minute or
+# two, not half an hour. A key-moments description runs ~400-800 tokens.
+DEFAULT_NUM_PREDICT = 1536
+
+# Repeat penalty: off (1.0). The old frame-by-frame prompt got the model stuck
+# restating one frame ("In the twenty-twenty-tenth frame, the cat is sitting
+# upright...") until it hit the cap; asking for key moments fixed that on its
+# own. A penalty made things worse: on the same clip and seed, 1.1 gave
+# 150-word run-on sentences and dropped the cats' names to "both animals",
+# and 1.05 repeated its "Funniest moment" line and invented a human foot.
+# If looping comes back on some clip, try 1.05 before anything stronger.
+REPEAT_PENALTY = 1.0
+REPEAT_LAST_N = 256
+
+# Everything about the model call that changes what comes back, for the
+# pipeline's settings fingerprint.
+GENERATION_SETTINGS = {
+    "think": THINK,
+    "num_predict": DEFAULT_NUM_PREDICT,
+    "temperature": 0.3,
+    "repeat_penalty": REPEAT_PENALTY,
+    "repeat_last_n": REPEAT_LAST_N,
+}
+
 # Prompt template. {cat_block} is replaced with cat-identification rules built
 # from config/local_settings.json, or an empty string if no cats are configured.
 _PROMPT_TEMPLATE = """You are analyzing a short video of a domestic cat (or cats) in an apartment.
 The frames below are in chronological order, sampled uniformly across the clip.
 {cat_block}
-Describe in detail what happens across the clip, including:
+Describe the clip as 3 to 6 key moments, in the order they happen. Do not go
+frame by frame: a moment covers a stretch of the clip in which something
+changes, and many frames belong to the same moment. Never repeat a moment.
+
+Use exactly this layout:
+
+Setting: one or two sentences on the room and the objects in it.
+
+Moments:
+1. (start) What happens, in two to four sentences.
+2. (early) ...
+3. (middle) ...
+4. (late) ...
+5. (end) ...
+
+Funniest moment: one sentence on the best comedic material in the clip.
+
+Label each moment with where it falls in the clip: start, early, middle,
+late or end. For each moment, cover:
   - Each cat's actions and motion (walking, pouncing, grooming, stretching, etc.)
   - Body language: ears (forward / back / flat), tail (up, twitching, puffed), eyes (wide, squinting, dilated), posture (crouched, loaf, belly-up)
-  - Environment and objects the cat interacts with
-  - How the scene evolves from first frame to last
-  - Any notable or unusually funny moments
+  - Objects the cat interacts with
 
 Be specific, concrete, and vivid. Avoid hedging language like "seems" or "appears".
+Describe only what is in the frames; write no narration or jokes yourself.
 This description will be used as input for a funny Animal-Planet-style voiceover,
 so call out anything that would make good comedic material (dramatic poses,
 suspicious glances, attempted crimes against furniture, etc.).
@@ -208,7 +256,7 @@ def describe(
         )
 
         t1 = time.perf_counter()
-        response = ollama.chat(
+        request = dict(
             model=model,
             messages=[
                 {
@@ -217,15 +265,43 @@ def describe(
                     "images": [str(f) for f in frames],
                 }
             ],
-            options={"temperature": 0.3, "num_ctx": num_ctx},
+            options={
+                "temperature": GENERATION_SETTINGS["temperature"],
+                "num_ctx": num_ctx,
+                "num_predict": GENERATION_SETTINGS["num_predict"],
+                "repeat_penalty": GENERATION_SETTINGS["repeat_penalty"],
+                "repeat_last_n": GENERATION_SETTINGS["repeat_last_n"],
+            },
         )
+        try:
+            response = ollama.chat(**request, think=THINK)
+        except ollama.ResponseError as e:
+            # A vision model without a thinking mode may refuse the setting.
+            if "think" not in str(e).lower():
+                raise
+            response = ollama.chat(**request)
         t_infer = time.perf_counter() - t1
         print(
             f"[info] model responded in {t_infer:.2f}s",
             file=sys.stderr,
             flush=True,
         )
-        return response["message"]["content"]
+        description = (response["message"].get("content") or "").strip()
+        cut_off = response.get("done_reason") == "length"
+        if not description:
+            raise RuntimeError(
+                "the vision model returned an empty description"
+                + (" (it used its whole output budget without answering)" if cut_off else "")
+                + ". Run the clip again; if it keeps happening, try a different "
+                "--vision-model."
+            )
+        if cut_off:
+            print(
+                f"[warn] the description hit the {GENERATION_SETTINGS['num_predict']}-token "
+                f"cap and was cut short; it is still used.",
+                file=sys.stderr,
+            )
+        return description
 
 
 def main() -> int:
@@ -323,6 +399,9 @@ def main() -> int:
         else:
             print(f"ollama error: {msg}", file=sys.stderr)
         return 2
+    except RuntimeError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 4
     except ConnectionError:
         print(
             "error: could not connect to Ollama at http://localhost:11434\n"

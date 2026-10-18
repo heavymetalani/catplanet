@@ -97,10 +97,36 @@ PARAGRAPH_SILENCE_SEC = 0.40
 # The attenborough style prompt asks for ellipses, em dashes and paragraph
 # breaks as dramatic beats, and the TTS engines honor every one of them. Read
 # aloud that lands as long dead gaps -- fine for a documentary, too slow for a
-# 17-second clip. Any internal silence longer than DEFAULT_MAX_PAUSE_SEC gets
+# 17-second clip. Any internal pause longer than DEFAULT_MAX_PAUSE_SEC gets
 # shortened to it. Set max_pause=0 to keep the engine's own timing.
-DEFAULT_MAX_PAUSE_SEC = 0.35
-SILENCE_THRESHOLD_DB = -45.0
+DEFAULT_MAX_PAUSE_SEC = 0.45
+
+# What counts as a pause. Chatterbox's pauses are rarely silent: it copies the
+# breath and room tone of the reference clip, so they sit around -36 to -44
+# dBFS, 25-30 dB under the speech. Measured against the loudest peak (the old
+# -45 dB rule) they looked like sound and were never trimmed, leaving gaps of
+# up to 4.7 s. So quiet is measured against the speech level instead: frames
+# more than PAUSE_BELOW_SPEECH_DB under it. These settings, with 0.45 s
+# pauses, were picked by ear on clip 47 (25.1 s -> 23.2 s): 25 dB with 0.35 s
+# pauses, a 50 ms hold and 0.05 s lead-in trimmed it to 19.4 s and sounded too
+# tight, clipping words.
+PAUSE_BELOW_SPEECH_DB = 28.0
+# A breath or click shorter than this inside a pause doesn't end the pause.
+PAUSE_HOLD_MS = 30.0
+# Silence kept before the first word and after the last one. The engines can
+# leave seconds of dead air at the end; the lead-in keeps a soft first sound
+# (the "H" of "Here...") from being clipped.
+LEAD_SILENCE_SEC = 0.15
+TAIL_SILENCE_SEC = 0.50
+
+# Everything about pause trimming that changes the output, for the pipeline's
+# settings fingerprint.
+PAUSE_SETTINGS = {
+    "below_speech_db": PAUSE_BELOW_SPEECH_DB,
+    "hold_ms": PAUSE_HOLD_MS,
+    "lead": LEAD_SILENCE_SEC,
+    "tail": TAIL_SILENCE_SEC,
+}
 
 # ---------------- output level ----------------
 # Neither engine normalizes: Kokoro lands around -24 LUFS, roughly 8 dB under
@@ -336,17 +362,23 @@ def compress_silences(
     audio: np.ndarray,
     sr: int,
     max_pause: float = DEFAULT_MAX_PAUSE_SEC,
-    threshold_db: float = SILENCE_THRESHOLD_DB,
+    below_speech_db: float = PAUSE_BELOW_SPEECH_DB,
+    hold_ms: float = PAUSE_HOLD_MS,
+    lead: float = LEAD_SILENCE_SEC,
+    tail: float = TAIL_SILENCE_SEC,
     frame_ms: float = 10.0,
 ) -> np.ndarray:
-    """Shorten any internal silence longer than `max_pause` down to `max_pause`.
+    """Shorten every pause longer than `max_pause` down to `max_pause`, and trim
+    the silence before the first word to `lead` and after the last to `tail`.
 
     Works on whatever the engine produced, so it fixes Kokoro's punctuation
-    pauses and Chatterbox's inserted gaps alike.
+    pauses and Chatterbox's breathy gaps alike. A pause is a stretch more than
+    `below_speech_db` under the speech level (the 90th-percentile frame), with
+    blips shorter than `hold_ms` ignored.
 
-    Cuts happen strictly *inside* silent regions and keep max_pause/2 of the
-    original silence on each side, so the decay into the pause and the breath
-    out of it survive and there is nothing audible to click.
+    Cuts happen strictly *inside* pauses and keep max_pause/2 of the original
+    on each side, so the decay into the pause and the breath out of it survive
+    and there is nothing audible to click.
     """
     if max_pause <= 0 or audio.size == 0:
         return audio
@@ -358,12 +390,27 @@ def compress_silences(
     frames = padded.reshape(n_frames, hop)
 
     rms = np.sqrt(np.mean(frames.astype(np.float64) ** 2, axis=1))
-    peak = float(np.max(np.abs(audio))) or 1.0
-    quiet = rms < (peak * (10.0 ** (threshold_db / 20.0)))
+    db = 20.0 * np.log10(rms + 1e-12)
+    speech_db = float(np.percentile(db, 90))
+    quiet = db < speech_db - below_speech_db
+
+    # A short blip of sound inside a pause (a click, the edge of a breath)
+    # stays part of the pause.
+    hold = max(1, int(hold_ms / frame_ms))
+    i = 0
+    while i < n_frames:
+        if quiet[i]:
+            i += 1
+            continue
+        j = i
+        while j < n_frames and not quiet[j]:
+            j += 1
+        if i > 0 and j < n_frames and (j - i) <= hold:
+            quiet[i:j] = True
+        i = j
 
     keep = np.ones(audio.size, dtype=bool)
-    max_len = int(max_pause * sr)
-    half = max_len // 2
+    half = int(max_pause * sr) // 2
 
     # Walk runs of quiet frames; trim the middle out of the long ones.
     start = None
@@ -373,8 +420,11 @@ def compress_silences(
             start = i
         elif not is_quiet and start is not None:
             s, e = start * hop, min(i * hop, audio.size)
-            # Leading and trailing silence isn't a pause between words; leave it.
-            if s > 0 and e < audio.size and (e - s) > max_len:
+            if s == 0:
+                keep[: max(0, e - int(lead * sr))] = False
+            elif e >= audio.size:
+                keep[s + int(tail * sr):] = False
+            elif (e - s) > 2 * half:
                 keep[s + half : e - half] = False
             start = None
 

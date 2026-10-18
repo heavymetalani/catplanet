@@ -444,7 +444,9 @@ def build_music_spec(
                     {"role": "user", "content": user_prompt},
                 ],
                 format="json",
-                options={"temperature": temperature, "top_p": 0.9},
+                # Same context as stage 2, so Ollama keeps the model loaded
+                # instead of reloading it with a different context size.
+                options={"temperature": temperature, "top_p": 0.9, "num_ctx": 8192},
                 # Unload after the final attempt; ACE-Step wants the memory.
                 keep_alive=0 if (release_model and attempt == 2) else "5m",
             )

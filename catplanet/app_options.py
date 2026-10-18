@@ -78,6 +78,14 @@ FIELDS: list[dict] = [
                   (1.1, "1.1 – wilder, more surprising")],
          custom="number",
          help="How adventurous the script writer is."),
+    dict(key="drafts", section="story", kind="select", type=int,
+         label="Script drafts",
+         choices=[(1, "1 – one draft, fastest"),
+                  (3, "3 – keep the funniest"),
+                  (5, "5 – more choice, slower")],
+         custom="number",
+         help="The text model writes this many drafts, each around a "
+              "different joke, and keeps the funniest."),
     dict(key="no_title", section="story", kind="inverse",
          label="Spoken title", on="On – the narrator reads a title first",
          off="Off – narration only",
@@ -134,8 +142,9 @@ FIELDS: list[dict] = [
          custom="number"),
     dict(key="max_pause", section="voice", kind="select", type=float,
          label="Longest pause", show={"narrate": True},
-         choices=[(0.25, "0.25 s – tight"), (0.35, "0.35 s – natural"),
-                  (0.5, "0.5 s – relaxed"), (0, "No limit – keep the engine's timing")],
+         choices=[(0.25, "0.25 s – tight"), (0.35, "0.35 s – snappy"),
+                  (0.45, "0.45 s – natural"), (0.6, "0.6 s – relaxed"),
+                  (0, "No limit – keep the engine's timing")],
          custom="number",
          help="Caps the silence between sentences so short clips don't have "
               "dead air."),
@@ -514,6 +523,15 @@ INFO: dict[str, str] = {
         "number gives wilder, more surprising lines, but they are more likely to go off "
         "topic or stop making sense."
     ),
+    "drafts": (
+        "This sets how many versions of the script are written before one is kept. "
+        "The text model first comes up with a different joke for each draft, writes a "
+        "draft around each joke, then reads them all and keeps the funniest. Every "
+        "draft, and why the winner won, is saved next to the script as "
+        "script_drafts.txt. More drafts give more choice but take longer: each extra "
+        "draft adds roughly 10 to 30 seconds. With 1, a single draft is written and "
+        "nothing is compared."
+    ),
     "no_title": (
         "When this is on, the script writer also makes up a short, funny title for the "
         "clip, two to six words, and the narrator reads it aloud before the narration. "
@@ -565,6 +583,8 @@ INFO: dict[str, str] = {
         "This caps how long the silence between sentences can be. The Attenborough "
         "style uses lots of dramatic pauses, and in a short clip long pauses feel like "
         "dead air. A smaller number keeps things moving; a larger one keeps more drama. "
+        "Breathy, near-silent gaps count as pauses too, and the silence at the very "
+        "start and end of the voiceover is trimmed as well. "
         "No limit keeps every pause exactly as the voice engine made it."
     ),
     "score": (

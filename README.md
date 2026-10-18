@@ -9,7 +9,7 @@ Each video goes through four stages.
 | Stage | What it does | Model | Code |
 | --- | --- | --- | --- |
 | 1 | Watches the video and writes a detailed description of what the cats do. | MiniCPM-V 4.5 (via Ollama) | `catplanet/describe_video.py` |
-| 2 | Turns the description into a funny narration script in a chosen style. | Qwen2.5-14B (via Ollama) | `catplanet/generate_script.py` |
+| 2 | Pitches a few comic angles, writes a draft of the narration for each in a chosen style, and keeps the funniest. | Qwen2.5-14B (via Ollama) | `catplanet/generate_script.py` |
 | 3 | Reads the script aloud and saves a voiceover `.wav`. | Kokoro or Chatterbox | `catplanet/generate_voice.py` |
 | 4 | Writes and records a string quartet cue to sit under the narration. | ACE-Step 1.5 (separate local server) | `catplanet/generate_music.py` |
 
@@ -111,6 +111,7 @@ data/outputs/53/
 ├── 53.mov               the original video, renamed to its number
 ├── 53.description.txt   what the vision model saw
 ├── 53.script.txt        the narration script
+├── 53.script_drafts.txt every draft written, and why the script won
 ├── 53.music_plan.json   the music caption, tempo and key
 ├── 53.voiceover.wav     the narrated voiceover
 ├── 53.music.1.wav       string quartet take 1

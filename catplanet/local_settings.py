@@ -13,6 +13,11 @@ What lives there
                       personal data, so the path stays out of the code.
     cats              Your cats' names, pronouns and coat descriptions. Used by
                       describe_video.py so the vision model can tell them apart.
+                      An optional "personality" per cat is used by
+                      generate_script.py for the jokes.
+    priority_moments  Moments your audience likes best ("the cats play
+                      fighting"). generate_script.py makes a matching moment
+                      the main action of the script; earlier entries win.
 
 To set up a fresh copy of the project:
 
