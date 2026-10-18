@@ -18,20 +18,20 @@ audio file using one of two TTS engines:
 Usage
 -----
     # Kokoro (default) — pick a preset British voice, no reference audio
-    python generate_voice.py --script s.txt --out out.wav
-    python generate_voice.py --script s.txt --out out.wav --voice bm_lewis --speed 0.95
+    python -m catplanet.generate_voice --script s.txt --out out.wav
+    python -m catplanet.generate_voice --script s.txt --out out.wav --voice bm_lewis --speed 0.95
 
     # Chatterbox with default voice (no cloning)
-    python generate_voice.py --script s.txt --out out.wav --engine chatterbox
+    python -m catplanet.generate_voice --script s.txt --out out.wav --engine chatterbox
 
     # Chatterbox cloning from a reference audio sample (5-10s of target voice)
-    python generate_voice.py --script s.txt --out out.wav \\
-        --engine chatterbox --reference-audio voices/my_narrator.wav \\
+    python -m catplanet.generate_voice --script s.txt --out out.wav \\
+        --engine chatterbox --reference-audio data/voices/my_narrator.wav \\
         --exaggeration 0.6
 
     # From stdin
-    python generate_script.py --description d.txt --length 28 \\
-        | python generate_voice.py --out out.wav --engine chatterbox
+    python -m catplanet.generate_script --description d.txt --length 28 \\
+        | python -m catplanet.generate_voice --out out.wav --engine chatterbox
 
 Kokoro voice presets (best fit for documentary narration)
 ---------------------------------------------------------
@@ -70,7 +70,7 @@ from typing import Literal
 import numpy as np
 import soundfile as sf
 
-import audio_utils
+from . import audio_utils, progress
 
 # ---------------- engine-agnostic defaults ----------------
 DEFAULT_ENGINE: Literal["kokoro", "chatterbox"] = "kokoro"
@@ -430,26 +430,29 @@ def generate_voice(
                 file=sys.stderr,
             )
 
-    sf.write(str(output_path), audio, sr)
+    # Written under a temporary name and renamed only when finished, so a
+    # crash never leaves a cut-off voiceover that looks complete.
+    tmp = progress.partial_path(output_path)
+    sf.write(str(tmp), audio, sr, format="WAV")
 
     # Level the narration with one constant gain. Measured from the file we
     # just wrote, applied to the samples in memory, rewritten -- no dynamic
     # processing anywhere near the audio.
     if target_lufs is not None:
-        measured_i, measured_tp = audio_utils.analyze(output_path)
+        measured_i, measured_tp = audio_utils.analyze(tmp)
         gain_db = audio_utils.gain_to_target(
             measured_i, measured_tp, target_lufs, label="voiceover"
         )
         if abs(gain_db) > 0.01:
             audio = (audio * (10.0 ** (gain_db / 20.0))).astype(np.float32)
-            sf.write(str(output_path), audio, sr)
+            sf.write(str(tmp), audio, sr, format="WAV")
             print(
                 f"[info] voiceover {measured_i:.1f} -> {target_lufs:.1f} LUFS "
                 f"({gain_db:+.1f} dB)",
                 file=sys.stderr,
             )
 
-    return output_path
+    return progress.commit_partial(tmp, output_path)
 
 
 def main() -> int:

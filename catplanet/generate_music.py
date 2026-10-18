@@ -24,22 +24,22 @@ instruments a string quartet does not have.
 Usage
 -----
     # Full stage 2b + 4, from a saved description
-    python generate_music.py --description samples/five.description.txt \\
-        --length 18 --style attenborough --out samples/five.music.wav
+    python -m catplanet.generate_music --description data/scratch/five.description.txt \\
+        --length 18 --style attenborough --out data/scratch/five.music.wav
 
     # Chain from stage 1
-    python describe_video.py samples/five.mov \\
-        | python generate_music.py --length 18 --out five.music.wav
+    python -m catplanet.describe_video data/scratch/five.mov \\
+        | python -m catplanet.generate_music --length 18 --out five.music.wav
 
     # Skip the LLM -- bare preset only (fast, deterministic)
-    python generate_music.py --length 18 --style noir --no-llm --out cue.wav
+    python -m catplanet.generate_music --length 18 --style noir --no-llm --out cue.wav
 
     # Audition three takes
-    python generate_music.py --description d.txt --length 18 --takes 3 --out cue.wav
+    python -m catplanet.generate_music --description d.txt --length 18 --takes 3 --out cue.wav
 
     # Match the bed to an existing voiceover (targets 9 LU below it)
-    python generate_music.py --description d.txt --length 18 \\
-        --voiceover samples/five.voiceover.wav --out samples/five.music.wav
+    python -m catplanet.generate_music --description d.txt --length 18 \\
+        --voiceover data/scratch/five.voiceover.wav --out data/scratch/five.music.wav
 
 Requires
 --------
@@ -63,7 +63,7 @@ from pathlib import Path
 import ollama
 import requests
 
-import audio_utils
+from . import audio_utils, progress
 
 # =========================================================
 # Defaults
@@ -224,6 +224,10 @@ class MusicSpec:
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
+
+    @classmethod
+    def from_json(cls, text: str) -> "MusicSpec":
+        return cls(**json.loads(text))
 
 
 # =========================================================
@@ -404,7 +408,7 @@ def build_music_spec(
     generic cue beats a dead pipeline.
 
     release_model=True unloads the model from Ollama afterwards. Stage 2b is
-    the last Ollama call, and ACE-Step needs the memory (see MUSIC_PLAN.md 7).
+    the last Ollama call, and ACE-Step needs the memory (see docs/MUSIC_PLAN.md section 7).
     """
     if style not in PRESETS:
         raise ValueError(
@@ -734,13 +738,17 @@ def post_process(
     sr = _probe_sample_rate(raw_wav)
     if sr:
         cmd += ["-ar", str(sr)]
-    cmd += ["-c:a", codec, str(output_path)]
+    # Write under a temporary name and rename when done, so a crash never
+    # leaves a cut-off take that looks complete.
+    tmp = progress.partial_path(output_path)
+    cmd += ["-c:a", codec, "-f", "wav", str(tmp)]
 
     result = subprocess.run(cmd, input=raw_wav, capture_output=True)
     if result.returncode != 0:
+        tmp.unlink(missing_ok=True)
         tail = result.stderr.decode("utf-8", "replace").strip().splitlines()[-5:]
         raise AceStepError("ffmpeg post-processing failed:\n  " + "\n  ".join(tail))
-    return output_path
+    return progress.commit_partial(tmp, output_path)
 
 
 def resolve_lufs_target(
@@ -780,10 +788,17 @@ def generate_music(
     vary: bool = True,
     save_specs: bool = False,
     bit_depth: int = DEFAULT_BIT_DEPTH,
+    reuse: dict[int, Path] | None = None,
+    on_take=None,
 ) -> list[Path]:
     """Stage 4. Generate, trim, level. Returns the written paths.
 
     With takes > 1 the files are numbered <stem>.1.wav, <stem>.2.wav, ...
+
+    reuse maps take numbers to files already finished by an earlier run; those
+    takes are skipped and returned as they are (per-take mode only). on_take,
+    if given, is called as on_take(number, path) after each take is written,
+    so progress survives a crash part-way through.
 
     vary=True (default) sends one request per take, each with a different
     accent, BPM and key, so the takes are actually distinguishable. That costs
@@ -814,11 +829,20 @@ def generate_music(
                              lufs_target=lufs_target, bit_depth=bit_depth)
             )
             if save_specs:
-                target.with_suffix(".json").write_text(spec.to_json())
+                progress.write_text(target.with_suffix(".json"), spec.to_json())
+            if on_take:
+                on_take(i, target)
         return written
+
+    reuse = reuse or {}
 
     variants = make_take_variants(spec, takes, base_seed=seed)
     for i, v in enumerate(variants, start=1):
+        if i in reuse:
+            print(f"[take {i}/{len(variants)}] reusing {reuse[i].name} from an "
+                  f"earlier run", file=sys.stderr, flush=True)
+            written.append(reuse[i])
+            continue
         print(
             f"[take {i}/{len(variants)}] {v.spec.bpm} BPM, {v.spec.key_scale}, "
             f"{v.infer_method} -- {v.label}",
@@ -835,7 +859,9 @@ def generate_music(
                          lufs_target=lufs_target, bit_depth=bit_depth)
         )
         if save_specs:
-            target.with_suffix(".json").write_text(v.spec.to_json())
+            progress.write_text(target.with_suffix(".json"), v.spec.to_json())
+        if on_take:
+            on_take(i, target)
     return written
 
 
@@ -1034,7 +1060,7 @@ def main() -> int:
     if args.save_prompt:
         spec_path = args.out.with_suffix(".json")
         spec_path.parent.mkdir(parents=True, exist_ok=True)
-        spec_path.write_text(spec.to_json())
+        progress.write_text(spec_path, spec.to_json())
         print(f"[info] saved spec to {spec_path}", file=sys.stderr)
 
     if args.print_caption:

@@ -1,30 +1,22 @@
 # ---------------------------------------------------------------------------
 # Personal settings -- never commit.
-# local_settings.json holds the voice to clone and your cats' names.
-# The committed template is local_settings.example.json.
+# config/local_settings.json holds the voice to clone and your cats' names.
+# The committed template is config/local_settings.example.json.
 # ---------------------------------------------------------------------------
-local_settings.json
-cats.json
-
-# Run log and version counter. Local to this machine: it lists your original
-# video filenames. Back it up -- deleting it restarts numbering at 1 and
-# overwrites existing outputs.
-batch_state.json
-batch_state.json.tmp
+config/local_settings.json
+config/ui_profiles.json
 
 # ---------------------------------------------------------------------------
-# Input and output folders (videos, voice recordings, generated audio and
-# scripts). The code recreates the output folders when it needs them.
+# data/ holds every input and output: the inbox queue, reference voices, one
+# folder per finished clip, scratch experiments, and batch_state.json (the
+# clip-number counter, which lists your original video filenames). It stays on
+# this machine only -- back it up. Deleting batch_state.json restarts
+# numbering at 1 and overwrites existing outputs.
 # ---------------------------------------------------------------------------
-voices/
-videos/
-samples/
-video_samples/
-voice_samples/
-music_samples/
-music_tests/
-descriptions/
-audio/
+data/
+
+# Old experiments set aside during the reorganization.
+review/
 
 # Safety net: no media file anywhere in the tree, even outside those folders.
 *.mov

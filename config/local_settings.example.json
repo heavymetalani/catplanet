@@ -1,6 +1,6 @@
 {
-  "_note": "Copy this file to local_settings.json and fill in your own values. local_settings.json is gitignored, so your settings stay private. Every field is optional.",
-  "reference_audio": "voices/narrator.wav",
+  "_note": "Copy this file to config/local_settings.json and fill in your own values. That file is gitignored, so your settings stay private. Every field is optional. Paths are relative to the project root.",
+  "reference_audio": "data/voices/narrator.wav",
   "cats": [
     {
       "name": "Whiskers",

@@ -9,8 +9,8 @@ intended to be fed into a second-stage script-writing model.
 
 Cat identification
 ------------------
-The prompt is built from the "cats" list in local_settings.json, which is
-gitignored so your cats' names stay private (copy local_settings.example.json
+The prompt is built from the "cats" list in config/local_settings.json, which is
+gitignored so your cats' names stay private (copy config/local_settings.example.json
 to start). Each entry has a name, pronouns, and an appearance description.
 The vision model is told to use the name whenever it can identify a cat by
 coat pattern, and to fall back to "one of the cats" when uncertain. Remove
@@ -18,9 +18,9 @@ the list to disable identification.
 
 Usage
 -----
-    python describe_video.py path/to/video.mp4
-    python describe_video.py path/to/video.mp4 --fps 4 --max-frames 24
-    python describe_video.py path/to/video.mp4 --prompt "Just list actions, no commentary."
+    python -m catplanet.describe_video path/to/video.mp4
+    python -m catplanet.describe_video path/to/video.mp4 --fps 4 --max-frames 24
+    python -m catplanet.describe_video path/to/video.mp4 --prompt "Just list actions, no commentary."
 
 Requires
 --------
@@ -41,7 +41,7 @@ from pathlib import Path
 
 import ollama
 
-import local_settings
+from . import local_settings
 
 DEFAULT_MODEL = "openbmb/minicpm-v4.5"
 
@@ -53,7 +53,7 @@ DEFAULT_MODEL = "openbmb/minicpm-v4.5"
 DEFAULT_NUM_CTX = 16384
 
 # Prompt template. {cat_block} is replaced with cat-identification rules built
-# from local_settings.json, or an empty string if no cats are configured.
+# from config/local_settings.json, or an empty string if no cats are configured.
 _PROMPT_TEMPLATE = """You are analyzing a short video of a domestic cat (or cats) in an apartment.
 The frames below are in chronological order, sampled uniformly across the clip.
 {cat_block}
@@ -74,7 +74,7 @@ suspicious glances, attempted crimes against furniture, etc.).
 def load_cats(path: Path | None = None) -> list[dict]:
     """Load cat identities. Returns [] if none are configured.
 
-    By default they come from the "cats" list in local_settings.json, which is
+    By default they come from the "cats" list in config/local_settings.json, which is
     gitignored so your cats' names stay private. Pass `path` to read a separate
     file in the same {"cats": [...]} shape instead.
     """
@@ -232,7 +232,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(
         description="Describe a cat video using MiniCPM-V 4.5 via Ollama."
     )
-    ap.add_argument("video", type=Path, help="Path to video file (mp4, mov, etc.)")
+    ap.add_argument(
+        "video",
+        type=Path,
+        nargs="?",
+        help="Path to video file (mp4, mov, etc.). Not needed with --show-prompt.",
+    )
     ap.add_argument(
         "--model", default=DEFAULT_MODEL, help=f"Ollama model (default: {DEFAULT_MODEL})"
     )
@@ -269,7 +274,7 @@ def main() -> int:
         default=None,
         help=(
             'Read cats from this JSON file ({"cats": [...]}) instead of the '
-            '"cats" list in local_settings.json.'
+            '"cats" list in config/local_settings.json.'
         ),
     )
     ap.add_argument(
@@ -289,6 +294,8 @@ def main() -> int:
         print(prompt, file=sys.stderr)
         return 0
 
+    if args.video is None:
+        ap.error("the following arguments are required: video")
     if not args.video.exists():
         print(f"error: {args.video} does not exist", file=sys.stderr)
         return 1

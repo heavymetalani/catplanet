@@ -4,19 +4,22 @@ generate_script.py
 
 Stage 2 of the cat-video pipeline. Takes a detailed description of what
 is happening in a clip (produced by describe_video.py) and writes a
-funny short-form voiceover script in the requested style.
+funny short-form voiceover script in the requested style. The script
+opens with a short title for the clip, which the narrator reads first
+(--no-title leaves it out). Your cats' names and pronouns come from
+config/local_settings.json, the same list stage 1 uses.
 
 Usage
 -----
     # From a file
-    python generate_script.py --description descriptions/zoomies.txt --length 15
+    python -m catplanet.generate_script --description data/scratch/zoomies.description.txt --length 15
 
     # From stdin (chain with stage 1)
-    python describe_video.py samples/zoomies.mp4 \\
-        | python generate_script.py --length 15
+    python -m catplanet.describe_video data/scratch/zoomies.mov \\
+        | python -m catplanet.generate_script --length 15
 
     # Pick a style
-    python generate_script.py --description d.txt --length 20 --style noir
+    python -m catplanet.generate_script --description d.txt --length 20 --style noir
 
 Styles
 ------
@@ -28,11 +31,14 @@ Styles
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import time
 from pathlib import Path
 
 import ollama
+
+from . import describe_video
 
 DEFAULT_MODEL = "qwen2.5:14b"
 
@@ -60,14 +66,16 @@ that follows punctuation literally:
   - Prefer concrete nouns and specific actions over adjectives.
 
 Vocabulary Attenborough actually uses: "here we see...", "observe...",
-"the creature...", "in an astonishing display of...", "and yet...",
-"having assessed...", "what appears to be...".
+"in an astonishing display of...", "and yet...", "having assessed...",
+"what appears to be...".
 
-Example beat structure (for a 15-second clip):
+Example beat structure (for a 15-second clip). [NAME] stands for whichever
+cat the description names. It shows rhythm only: write your own sentences,
+and don't open with the same line.
 
-    Here... we observe the domestic feline. A creature of habit.
+    Here... we observe [NAME]. A creature of habit.
 
-    It has chosen, once again — against all reason — to occupy
+    She has chosen, once again — against all reason — to occupy
     the empty box beside the couch.
 
     Evolution... offers no explanation.""",
@@ -103,7 +111,7 @@ Style rules:
 }
 
 USER_PROMPT_TEMPLATE = """Below is a detailed description of a {length}-second short-form cat video.
-
+{cast_block}
 --- DESCRIPTION ---
 {description}
 --- END DESCRIPTION ---
@@ -113,10 +121,74 @@ Write the voiceover narration for this clip.
 Constraints:
   - Target length: approximately {word_count} words (matches roughly {length} seconds at a lively short-form pace).
   - Output ONLY the spoken narration words. No stage directions, no bracketed cues, no timestamps, no section headers, no explanation.
-  - Do not address the cat's name (you don't know it).
+  - Call each cat by the name the description gives them, and use their pronouns. Say each named cat's name at least once. Never call a named cat "the creature", "this cat" or "the feline".
+  - If the description only says "one of the cats", leave that cat unnamed rather than guessing.
   - If the description mentions multiple distinct moments, weave the narration to hit them in order.
-
+  - Keep the voice, jokes, cadence and punctuation your instructions ask for. Don't just retell the description.
+{title_rule}
 Begin."""
+
+# Added to the constraints when a title is wanted. The title is spoken first,
+# so it is written in the narrator's voice, not as a caption.
+TITLE_RULE = """  - Start with a title for the clip on its own line, in exactly this form:
+        TITLE: <a short, funny title of 2 to 6 words, in the narrator's voice>
+    Invent the title yourself, like the name of an episode in your style; don't copy a heading from the description.
+    Then a blank line, then the narration. The title is read aloud before the narration.
+"""
+
+# Words held back from the narration target for the spoken title, so the
+# voiceover still fits the clip.
+TITLE_WORD_ALLOWANCE = 5
+
+
+def build_cast_block(cats: list[dict] | None = None) -> str:
+    """Names and pronouns of the household's cats, from config/local_settings.json.
+
+    The description already uses the names, but listing them here as well keeps
+    the pronouns right and stops the writer drifting back to "the creature".
+    Empty string if no cats are configured.
+    """
+    if cats is None:
+        cats = describe_video.load_cats()
+    if not cats:
+        return ""
+    lines = ["", "The cats in this household (the description uses these names):"]
+    for cat in cats:
+        lines.append(f"  - {cat['name']} ({cat['pronouns']})")
+    return "\n".join(lines) + "\n"
+
+
+def prompt_signature(style: str, title: bool = True) -> str:
+    """Everything in the prompts except the description, for the pipeline's
+    settings fingerprint: editing a prompt or your cats redoes the script."""
+    return "\n".join([
+        build_system_prompt(style),
+        USER_PROMPT_TEMPLATE,
+        TITLE_RULE if title else "",
+        build_cast_block(),
+    ])
+
+
+_TITLE_LINE = re.compile(r"^[\s*#_]*title[\s*_]*:\s*(.+)$", re.IGNORECASE)
+_LABEL_LINE = re.compile(r"^[\s*#_]*(narration|voiceover|script)[\s*_]*:\s*$", re.IGNORECASE)
+
+
+def split_title(text: str) -> tuple[str | None, str]:
+    """Pull the "TITLE: ..." line off the model's output.
+
+    Returns (title, narration). The title is None if the model left it out.
+    """
+    lines = text.strip().splitlines()
+    title = None
+    if lines:
+        m = _TITLE_LINE.match(lines[0])
+        if m:
+            title = m.group(1).strip().strip('*_"\'“”‘’ ').rstrip(".").strip()
+            lines = lines[1:]
+    # Drop blank lines and a stray "Narration:" label before the narration.
+    while lines and (not lines[0].strip() or _LABEL_LINE.match(lines[0])):
+        lines = lines[1:]
+    return (title or None), "\n".join(lines).strip()
 
 
 def build_system_prompt(style: str) -> str:
@@ -134,15 +206,23 @@ def generate_script(
     model: str,
     words_per_second: float = 2.5,
     temperature: float = 0.9,
+    title: bool = True,
 ) -> str:
-    """Call the text LLM and return the generated voiceover narration."""
+    """Call the text LLM and return the generated voiceover narration.
+
+    With `title`, the first paragraph is a short spoken title for the clip.
+    """
     system_prompt = build_system_prompt(style)
     word_count = max(12, int(video_length * words_per_second))
+    if title:
+        word_count = max(12, word_count - TITLE_WORD_ALLOWANCE)
 
     user_prompt = USER_PROMPT_TEMPLATE.format(
         length=video_length,
         description=description.strip(),
         word_count=word_count,
+        cast_block=build_cast_block(),
+        title_rule=TITLE_RULE if title else "",
     )
 
     response = ollama.chat(
@@ -156,7 +236,18 @@ def generate_script(
             "top_p": 0.95,
         },
     )
-    return response["message"]["content"].strip()
+    text = response["message"]["content"].strip()
+    if not title:
+        return text
+
+    heading, narration = split_title(text)
+    if heading is None:
+        print("[warn] the model left out the title; using the narration alone.",
+              file=sys.stderr)
+        return narration
+    # A period and a paragraph break give the narrator a breath after the title.
+    end = "" if heading[-1] in "!?" else "."
+    return f"{heading}{end}\n\n{narration}"
 
 
 def main() -> int:
@@ -200,6 +291,11 @@ def main() -> int:
         default=0.9,
         help="Sampling temperature (default: 0.9). Higher = wilder.",
     )
+    ap.add_argument(
+        "--no-title",
+        action="store_true",
+        help="Leave out the spoken title at the start of the script.",
+    )
     args = ap.parse_args()
 
     # Read description from file or stdin
@@ -230,6 +326,7 @@ def main() -> int:
             model=args.model,
             words_per_second=args.wps,
             temperature=args.temperature,
+            title=not args.no_title,
         )
     except ollama.ResponseError as e:
         msg = str(e)
