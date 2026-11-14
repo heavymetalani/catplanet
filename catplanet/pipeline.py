@@ -392,6 +392,7 @@ def main() -> int:
     desc_path = out("description.txt")
     script_path = out("script.txt")
     drafts_path = out("script_drafts.txt")
+    cut_path = out("cuts.json")
     plan_path = out("music_plan.json")
     voice_target = args.audio_out if args.audio_out is not None else out("voiceover.wav")
     music_path = args.music_out if args.music_out is not None else out("music.wav")
@@ -413,6 +414,7 @@ def main() -> int:
 
     # ---- video length -----------------------------------------------------
     length: int
+    dur: float | None = None
     if args.length is not None:
         length = args.length
     else:
@@ -522,7 +524,7 @@ def main() -> int:
             print(f"[stage 2] reusing saved script ({script_path.name})",
                   file=sys.stderr, flush=True)
         else:
-            clip.keep_old(script_path, drafts_path)
+            clip.keep_old(script_path, drafts_path, cut_path)
             print(f"[stage 2] writing {args.style} voiceover ({length}s target)...",
                   file=sys.stderr, flush=True)
             t2 = time.perf_counter()
@@ -541,6 +543,7 @@ def main() -> int:
                     title=not args.no_title,
                     drafts=args.drafts,
                     log=on_step,
+                    duration=dur,
                 )
             except Exception as e:
                 return fail(3, f"stage 2 failed: {e}")
@@ -550,12 +553,21 @@ def main() -> int:
                       f"{len(result.drafts)}: {result.reason}", file=sys.stderr)
             print(f"[stage 2] done in {time.perf_counter() - t2:.1f}s",
                   file=sys.stderr, flush=True)
+            cut = result.beats.cut if result.beats else None
+            script_files = [script_path, drafts_path]
             if tracked or args.save_script:
                 progress.write_text(script_path, script)
                 progress.write_text(drafts_path, result.report())
                 print(f"[info] saved script to {script_path} (every draft in "
                       f"{drafts_path.name})", file=sys.stderr)
-            clip.record("script", fp_script, script_path, drafts_path)
+                if cut:
+                    progress.write_text(cut_path, json.dumps(cut.to_json(), indent=2) + "\n")
+                    script_files.append(cut_path)
+                    print(f"[info] suggested cut {cut.start:.1f}-{cut.end:.1f} s, saved "
+                          f"to {cut_path.name}", file=sys.stderr)
+                elif cut_path.exists():
+                    cut_path.unlink()   # from an earlier run; it no longer matches
+            clip.record("script", fp_script, *script_files)
 
         # ---- stage 2b: music plan (optional) ---------------------------------
         # This runs here, not next to stage 4, because it uses the same Ollama

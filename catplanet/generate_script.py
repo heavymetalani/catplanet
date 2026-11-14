@@ -10,7 +10,10 @@ It works like a writers' room: first it writes down the facts (the main
 action the script must cover, and what happens in order), then pitches
 several comic angles, writes one draft per angle, checks every draft
 against the facts and keeps the funniest one that passed (--drafts sets
-how many; 1 skips the judging). Moments listed under "priority_moments" in
+how many; 1 skips the judging). When the description gives each moment a
+time (stage 1 does), the beat sheet also names the setup and the payoff, and
+a suggested cut (where the Short should start and end) comes with the
+result; see CutSuggestion. Moments listed under "priority_moments" in
 config/local_settings.json become the main action when a clip shows them. The script
 opens with a short title for the clip, which the narrator reads first
 (--no-title leaves it out). Your cats' names, pronouns and personalities
@@ -154,8 +157,23 @@ Write the beat sheet for this clip:
   - "beats": 3 to 6 short sentences, in the order they happen, each saying who does what, using the cats' names. Keep each action exactly as the description gives it. {no_upgrades} Leave out guesses ("possibly", "seems", "perhaps").
   - "priority": {priority_rule}
   - "main_action": one sentence naming the event the narration must be about. {main_action_rule}
+{timing_block}
+Reply as JSON: {{"beats": ["...", "..."], "priority": 0, "main_action": "..."{timing_json}}}"""
 
-Reply as JSON: {{"beats": ["...", "..."], "priority": 0, "main_action": "..."}}"""
+# Added to the beat sheet when the description's moments have times. The
+# model only names moments by number; the code works out the times.
+TIMING_BLOCK = """  - "payoff_moment": the number of the description's moment in which the main action happens.
+  - "setup_moment": the number of the earliest moment a viewer must see for the main action to make sense. Often it is the moment just before the payoff, or the payoff moment itself when the clip opens on the action.
+  - "quiet_moments": the numbers of the moments in which nothing happens: the cats sit, lie or stand still and nothing changes. Never include the setup or payoff moment. Empty if there are none.
+"""
+TIMING_JSON = ', "setup_moment": 1, "payoff_moment": 2, "quiet_moments": []'
+
+# How the suggested cut is placed around the setup and payoff, from the
+# cat-videos-short-form skill's editing rules: open just before the setup,
+# and keep 0.5-1.5 s after the payoff for the reaction.
+CUT_LEAD_IN = 0.5     # seconds kept before the setup moment starts
+CUT_TAIL = 1.0        # seconds kept after the payoff moment ends
+CUT_MIN_DROP = 1.5    # a quiet stretch shorter than this isn't worth cutting
 
 # Inserted when config/local_settings.json lists priority moments.
 PRIORITY_BLOCK_TEMPLATE = """
@@ -297,11 +315,85 @@ Reply as JSON: {{"checks": [{{"draft": 1, "shows_main_action": true, "invented":
 
 
 @dataclass
+class CutSuggestion:
+    """Where the Short should start and end, from the timed description.
+
+    A starting point for the edit, not a decision: the times are only as
+    fine as stage 1's frame spacing, so refine them with the skill's scan.
+    """
+    start: float
+    end: float
+    duration: float                       # the whole clip
+    setup: describe_video.Moment
+    payoff: describe_video.Moment
+    drop: list[describe_video.Moment]     # quiet stretches inside the cut
+    funniest: tuple[float, float] | None = None
+
+    def to_json(self) -> dict:
+        def moment(m):
+            return {"moment": m.number, "start": m.start, "end": m.end, "text": m.text}
+        return {
+            "start": self.start,
+            "end": self.end,
+            "length": round(self.end - self.start - sum(m.end - m.start for m in self.drop), 1),
+            "clip_length": self.duration,
+            "setup": moment(self.setup),
+            "payoff": moment(self.payoff),
+            "drop": [moment(m) for m in self.drop],
+            "funniest": list(self.funniest) if self.funniest else None,
+            "note": ("Suggested by stage 2 from the timed description. Times are "
+                     "only as fine as the frame spacing; check them against the clip."),
+        }
+
+    def summary(self) -> str:
+        data = self.to_json()
+        lines = [f"Keep {self.start:.1f}-{self.end:.1f} s "
+                 f"({data['length']:.1f} s of the {self.duration:.1f} s clip)",
+                 f"Setup:  moment {self.setup.number} ({self.setup.start:.1f}-{self.setup.end:.1f} s)",
+                 f"Payoff: moment {self.payoff.number} ({self.payoff.start:.1f}-{self.payoff.end:.1f} s)"]
+        if self.drop:
+            lines.append("Drop:   " + ", ".join(
+                f"moment {m.number} ({m.start:.1f}-{m.end:.1f} s)" for m in self.drop))
+        if self.funniest:
+            lines.append(f"Funniest moment: {self.funniest[0]:.1f}-{self.funniest[1]:.1f} s")
+        return "\n".join(lines)
+
+
+def suggest_cut(
+    moments: list[describe_video.Moment],
+    setup_number: int,
+    payoff_number: int,
+    quiet_numbers: list[int],
+    duration: float,
+    funniest: tuple[float, float] | None = None,
+) -> CutSuggestion | None:
+    """Turn the beat sheet's moment numbers into a suggested cut.
+
+    Returns None if the payoff isn't one of the description's moments.
+    """
+    by_number = {m.number: m for m in moments}
+    payoff = by_number.get(payoff_number)
+    if payoff is None:
+        return None
+    setup = by_number.get(setup_number, payoff)
+    if setup.start > payoff.start:
+        setup = payoff
+    start = round(max(0.0, setup.start - CUT_LEAD_IN), 1)
+    end = round(min(duration, payoff.end + CUT_TAIL), 1)
+    drop = [m for m in moments
+            if m.number in quiet_numbers
+            and setup.start < m.start and m.end <= payoff.start
+            and m.end - m.start >= CUT_MIN_DROP]
+    return CutSuggestion(start, end, round(duration, 1), setup, payoff, drop, funniest)
+
+
+@dataclass
 class BeatSheet:
     """The facts every draft is bound to."""
     main_action: str
     beats: list[str]
     priority: str | None = None     # the priority moment the clip shows, if any
+    cut: CutSuggestion | None = None
 
     def block(self) -> str:
         return FACTS_BLOCK_TEMPLATE.format(
@@ -351,6 +443,9 @@ class ScriptResult:
             parts.append(self.beats.block().strip()
                          .removeprefix("--- FACTS ---").removesuffix("--- END FACTS ---")
                          .strip() + "\n")
+            if self.beats.cut:
+                parts.append("=== Suggested cut ===")
+                parts.append(self.beats.cut.summary() + "\n")
         for i, (angle, draft) in enumerate(zip(self.angles, self.drafts)):
             mark = "   <- picked" if i == self.winner else ""
             label = "Draft" if angle is not FAITHFUL else "Faithful draft"
@@ -415,6 +510,9 @@ def prompt_signature(style: str, title: bool = True, drafts: int = DEFAULT_DRAFT
         NO_UPGRADES,
         BEATS_SYSTEM_PROMPT,
         BEATS_PROMPT_TEMPLATE,
+        TIMING_BLOCK,
+        TIMING_JSON,
+        str((CUT_LEAD_IN, CUT_TAIL, CUT_MIN_DROP)),
         PRIORITY_BLOCK_TEMPLATE,
         PRIORITY_RULE,
         MAIN_ACTION_RULE_PRIORITY,
@@ -494,8 +592,13 @@ def write_beats(
     video_length: int,
     model: str,
     num_ctx: int = DEFAULT_NUM_CTX,
+    duration: float | None = None,
 ) -> BeatSheet | None:
-    """Step 1: write down the facts. Returns None if the reply is unusable twice."""
+    """Step 1: write down the facts. Returns None if the reply is unusable twice.
+
+    When the description's moments have times, the beat sheet also carries a
+    suggested cut. `duration` is the clip's exact length (default: video_length).
+    """
     schema = {
         "type": "object",
         "properties": {
@@ -505,6 +608,14 @@ def write_beats(
         },
         "required": ["beats", "priority", "main_action"],
     }
+    timed = describe_video.parse_moments(description)
+    if timed:
+        schema["properties"].update({
+            "setup_moment": {"type": "integer"},
+            "payoff_moment": {"type": "integer"},
+            "quiet_moments": {"type": "array", "items": {"type": "integer"}},
+        })
+        schema["required"] += ["setup_moment", "payoff_moment", "quiet_moments"]
     moments = load_priority_moments()
     priority_block = PRIORITY_BLOCK_TEMPLATE.format(
         moments="\n".join(f"  {i + 1}. {m}" for i, m in enumerate(moments))
@@ -517,6 +628,8 @@ def write_beats(
         no_upgrades=NO_UPGRADES,
         priority_rule=PRIORITY_RULE if moments else "always 0.",
         main_action_rule=MAIN_ACTION_RULE_PRIORITY if moments else MAIN_ACTION_RULE_PLAIN,
+        timing_block=TIMING_BLOCK if timed else "",
+        timing_json=TIMING_JSON if timed else "",
     )
     for attempt in (1, 2):
         try:
@@ -529,7 +642,21 @@ def write_beats(
                 raise ValueError("no beats or no main action")
             number = int(data.get("priority") or 0)
             priority = moments[number - 1] if 1 <= number <= len(moments) else None
-            return BeatSheet(main_action, beats, priority)
+            cut = None
+            if timed:
+                cut = suggest_cut(
+                    timed,
+                    int(data.get("setup_moment") or 0),
+                    int(data.get("payoff_moment") or 0),
+                    [int(q) for q in data.get("quiet_moments") or []
+                     if isinstance(q, (int, float))],
+                    duration if duration else float(video_length),
+                    describe_video.parse_funniest(description),
+                )
+                if cut is None:
+                    print("[warn] the beat sheet's payoff isn't one of the description's "
+                          "moments, so there is no suggested cut.", file=sys.stderr)
+            return BeatSheet(main_action, beats, priority, cut)
         except (ValueError, TypeError) as e:
             print(f"[warn] beat sheet attempt {attempt} was unusable ({e}).",
                   file=sys.stderr)
@@ -764,11 +891,14 @@ def generate_script(
     drafts: int = DEFAULT_DRAFTS,
     num_ctx: int = DEFAULT_NUM_CTX,
     log=None,
+    duration: float | None = None,
 ) -> ScriptResult:
     """Write the beat sheet, pitch angles, write `drafts` drafts, and keep the
     funniest draft that sticks to the facts.
 
     `log`, if given, is called with a short progress line before each call.
+    `duration` is the clip's exact length in seconds, for the suggested cut
+    (default: video_length).
     """
     if not description.strip():
         # Without a description the model invents a scene from nothing.
@@ -777,10 +907,12 @@ def generate_script(
     drafts = max(1, drafts)
 
     say("writing the beat sheet")
-    beats = write_beats(description, video_length, model, num_ctx)
+    beats = write_beats(description, video_length, model, num_ctx, duration)
     if beats:
         say(f"main action: {beats.main_action}"
             + (f" (priority moment: {beats.priority})" if beats.priority else ""))
+        if beats.cut:
+            say(f"suggested cut: {beats.cut.start:.1f}-{beats.cut.end:.1f} s")
 
     say(f"pitching {drafts} comic angle{'s' if drafts > 1 else ''}")
     angles: list[str | None] = list(pitch_angles(
@@ -910,6 +1042,13 @@ def main() -> int:
         default=None,
         help="Also save every angle and draft, and why the winner won, to this file.",
     )
+    ap.add_argument(
+        "--cut-out",
+        type=Path,
+        default=None,
+        help=("Save the suggested cut (where the Short should start and end) to this "
+              "JSON file. Needs a description with timed moments."),
+    )
     args = ap.parse_args()
 
     # Read description from file or stdin
@@ -971,6 +1110,14 @@ def main() -> int:
     if args.drafts_out is not None:
         args.drafts_out.write_text(result.report())
         print(f"[info] saved every draft to {args.drafts_out}", file=sys.stderr)
+    if args.cut_out is not None:
+        cut = result.beats.cut if result.beats else None
+        if cut is None:
+            print("[warn] no suggested cut: the description has no timed moments, "
+                  "or the beat sheet didn't place the payoff.", file=sys.stderr)
+        else:
+            args.cut_out.write_text(json.dumps(cut.to_json(), indent=2) + "\n")
+            print(f"[info] saved the suggested cut to {args.cut_out}", file=sys.stderr)
     print(result.script)
     return 0
 

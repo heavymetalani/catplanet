@@ -631,7 +631,9 @@ INFO: dict[str, str] = {
     "max_frames": (
         "This caps the total number of frames sent to the vision model, however long "
         "the clip is. More frames can mean a more detailed description, but slower runs "
-        "and a higher chance of running out of room. 16 to 24 is the sweet spot."
+        "and a higher chance of running out of room. 16 to 24 is the sweet spot. The "
+        "frames are spread evenly over the clip, so with fewer frames on a long clip the "
+        "times given for each moment are rougher."
     ),
     "num_ctx": (
         "This is how much the vision model can take in at once, and each frame uses "
