@@ -5,8 +5,23 @@ describe_video.py
 Extract frames from a cat video and ask MiniCPM-V 4.5 (running locally
 via Ollama) what is happening in the clip. The output is a vivid,
 concrete description of the action, body language, and environment,
-laid out as 3 to 6 key moments in order, intended to be fed into a
-second-stage script-writing model.
+laid out as 3 to 6 key moments in order, each with the stretch of the clip
+it covers in seconds, intended to be fed into a second-stage script-writing
+model. Stage 2 reads those times back with parse_moments() to suggest where
+to cut the clip.
+
+Timestamps
+----------
+The prompt lists each frame's time in the clip, in the same order as the
+frames (see build_messages), so the model can give every moment a time range
+like "(2.5-5.0 s)". The times are only as fine as the frame spacing: 24
+frames across a 20-second clip are about 0.85 s apart.
+
+Two other ways of giving the times were tried on 11 clips and dropped:
+sending each frame as its own message with a caption, and printing the time
+on the frame. Both made the description itself worse: each missed or only
+partly caught the clip's main event in 2 or 3 of 9 clips, against none with
+the list. The captioned frames also left out the start or end of 3 clips.
 
 Cat identification
 ------------------
@@ -33,11 +48,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import ollama
@@ -76,6 +93,7 @@ REPEAT_LAST_N = 256
 # Everything about the model call that changes what comes back, for the
 # pipeline's settings fingerprint.
 GENERATION_SETTINGS = {
+    "frame_times": "listed in the prompt",
     "think": THINK,
     "num_predict": DEFAULT_NUM_PREDICT,
     "temperature": 0.3,
@@ -86,7 +104,8 @@ GENERATION_SETTINGS = {
 # Prompt template. {cat_block} is replaced with cat-identification rules built
 # from config/local_settings.json, or an empty string if no cats are configured.
 _PROMPT_TEMPLATE = """You are analyzing a short video of a domestic cat (or cats) in an apartment.
-The frames below are in chronological order, sampled uniformly across the clip.
+The frames below are in chronological order, sampled evenly across the clip.
+The time of each frame in the clip is listed below, in the same order as the frames.
 {cat_block}
 Describe the clip as 3 to 6 key moments, in the order they happen. Do not go
 frame by frame: a moment covers a stretch of the clip in which something
@@ -97,16 +116,16 @@ Use exactly this layout:
 Setting: one or two sentences on the room and the objects in it.
 
 Moments:
-1. (start) What happens, in two to four sentences.
-2. (early) ...
-3. (middle) ...
-4. (late) ...
-5. (end) ...
+1. (<start>-<end> s) What happens, in two to four sentences.
+2. (<start>-<end> s) ...
+3. (<start>-<end> s) ...
 
-Funniest moment: one sentence on the best comedic material in the clip.
+Funniest moment (<start>-<end> s): one sentence on the best comedic material in the clip.
 
-Label each moment with where it falls in the clip: start, early, middle,
-late or end. For each moment, cover:
+Give each moment the stretch of the clip it covers, in seconds with one
+decimal, read from the frames' times. Each moment starts where the one
+before it ends, the first starts at the first frame's time and the last
+ends at the last frame's time. For each moment, cover:
   - Each cat's actions and motion (walking, pouncing, grooming, stretching, etc.)
   - Body language: ears (forward / back / flat), tail (up, twitching, puffed), eyes (wide, squinting, dilated), posture (crouched, loaf, belly-up)
   - Objects the cat interacts with
@@ -187,8 +206,18 @@ def build_prompt(cats: list[dict] | None = None) -> str:
 DEFAULT_PROMPT = build_prompt()
 
 
-def extract_frames(video_path: Path, fps: float, out_dir: Path) -> list[Path]:
-    """Extract frames at the given fps using ffmpeg. Returns sorted frame paths."""
+@dataclass
+class Frame:
+    path: Path
+    time: float     # seconds from the start of the clip
+
+
+def extract_frames(video_path: Path, fps: float, out_dir: Path) -> list[Frame]:
+    """Extract frames at the given fps using ffmpeg, with each frame's time.
+
+    The times come from ffmpeg's showinfo filter, measured from the first
+    frame, so a clip whose stream starts late still begins at 0.0.
+    """
     if not shutil.which("ffmpeg"):
         raise RuntimeError(
             "ffmpeg not found on PATH. Install it with `brew install ffmpeg`."
@@ -198,20 +227,40 @@ def extract_frames(video_path: Path, fps: float, out_dir: Path) -> list[Path]:
     cmd = [
         "ffmpeg",
         "-hide_banner",
-        "-loglevel", "error",
+        "-loglevel", "info",  # showinfo logs each frame's time at info level
         "-y",
         "-i", str(video_path),
-        "-vf", f"fps={fps}",
+        "-vf", f"fps={fps},showinfo",
         "-q:v", "2",  # high quality JPEG
         str(out_pattern),
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed:\n{result.stderr}")
-    return sorted(out_dir.glob("frame_*.jpg"))
+    paths = sorted(out_dir.glob("frame_*.jpg"))
+    times = [float(t) for t in re.findall(r"pts_time:\s*(-?[\d.]+)", result.stderr)]
+    if len(times) != len(paths):
+        # Fall back to the nominal spacing if showinfo's log can't be matched up.
+        times = [i / fps for i in range(len(paths))]
+    first = times[0] if times else 0.0
+    return [Frame(p, round(t - first, 2)) for p, t in zip(paths, times)]
 
 
-def subsample(frames: list[Path], max_frames: int) -> list[Path]:
+def build_messages(prompt: str, frames: list[Frame]) -> list[dict]:
+    """The chat message for one description request: every frame, and the
+    prompt followed by this clip's frame times, so the model can time each
+    moment and cover the whole clip."""
+    times = ", ".join(f"{f.time:.1f}" for f in frames)
+    return [{
+        "role": "user",
+        "content": (f"{prompt}\nFrame times, in order (seconds): {times}\n"
+                    f"The frames run from t = {frames[0].time:.1f} s to "
+                    f"t = {frames[-1].time:.1f} s.\n"),
+        "images": [str(f.path) for f in frames],
+    }]
+
+
+def subsample(frames: list, max_frames: int) -> list:
     """Keep first and last frames, subsample the middle evenly."""
     if len(frames) <= max_frames:
         return frames
@@ -258,13 +307,7 @@ def describe(
         t1 = time.perf_counter()
         request = dict(
             model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": [str(f) for f in frames],
-                }
-            ],
+            messages=build_messages(prompt, frames),
             options={
                 "temperature": GENERATION_SETTINGS["temperature"],
                 "num_ctx": num_ctx,
@@ -286,7 +329,7 @@ def describe(
             file=sys.stderr,
             flush=True,
         )
-        description = (response["message"].get("content") or "").strip()
+        description = clean_description(response["message"].get("content") or "")
         cut_off = response.get("done_reason") == "length"
         if not description:
             raise RuntimeError(
@@ -302,6 +345,66 @@ def describe(
                 file=sys.stderr,
             )
         return description
+
+
+_FUNNIEST = re.compile(r"^\s*\**funniest moment\b", re.IGNORECASE)
+
+
+def clean_description(text: str) -> str:
+    """Tidy the model's reply: keep only the first "Funniest moment" line.
+
+    The model sometimes writes that line twice in slightly different words.
+    """
+    lines, seen_funniest = [], False
+    for line in text.strip().splitlines():
+        if _FUNNIEST.match(line):
+            if seen_funniest:
+                continue
+            seen_funniest = True
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
+@dataclass
+class Moment:
+    number: int
+    start: float
+    end: float
+    text: str
+
+
+# "(2.5-5.0 s)", "(2.5 s - 5.0 s)", "(2.5–5s)", "(2.5 to 5.0 s)"
+_RANGE = r"\(\s*(\d+(?:\.\d+)?)\s*s?\s*(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*s?\s*\)"
+_MOMENT_LINE = re.compile(r"^\s*\**(\d+)\.\**\s*" + _RANGE + r"\s*(.*)$")
+_FUNNIEST_LINE = re.compile(r"^\s*\**funniest moment\**\s*:?\s*" + _RANGE, re.IGNORECASE)
+
+
+def parse_moments(description: str) -> list[Moment]:
+    """The timed moments in a description, in order.
+
+    Returns [] when the description has no timed moments (an old description
+    written before timestamps, or a custom --prompt), or when the times are
+    unusable: out of order, or ending before they start.
+    """
+    moments: list[Moment] = []
+    for line in description.splitlines():
+        m = _MOMENT_LINE.match(line)
+        if m:
+            start, end = float(m.group(2)), float(m.group(3))
+            moments.append(Moment(int(m.group(1)), start, end, m.group(4).strip()))
+    for i, m in enumerate(moments):
+        if m.end < m.start or (i and m.start < moments[i - 1].start):
+            return []
+    return moments
+
+
+def parse_funniest(description: str) -> tuple[float, float] | None:
+    """The time range given for the funniest moment, if any."""
+    for line in description.splitlines():
+        m = _FUNNIEST_LINE.match(line)
+        if m and float(m.group(2)) >= float(m.group(1)):
+            return float(m.group(1)), float(m.group(2))
+    return None
 
 
 def main() -> int:

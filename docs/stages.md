@@ -46,13 +46,15 @@ python -m catplanet.describe_video data/scratch/cat_clip.mov
 python -m catplanet.describe_video data/scratch/cat_clip.mov > data/scratch/cat_clip.description.txt
 ```
 
-The description is laid out as a one-line setting, then 3 to 6 key moments in order (each labelled start, early, middle, late or end), then the funniest moment. Moments rather than frames keep the description short, which makes stages 1 and 2 faster, and stop the model from getting stuck restating one frame.
+The description is laid out as a one-line setting, then 3 to 6 key moments in order, then the funniest moment. Each moment and the funniest moment carry the stretch of the clip they cover, such as `(2.5-5.0 s)`. Moments rather than frames keep the description short, which makes stages 1 and 2 faster, and stop the model from getting stuck restating one frame.
+
+The model gets those times because the prompt lists each frame's time in the clip, in the same order as the frames. The times are only as fine as the gap between frames: 24 frames spread over a 20-second clip are about 0.85 seconds apart. Descriptions saved before timestamps existed have no times; a resumed or batch run redoes them, because the prompt changed.
 
 Useful options:
 
 - `--fps 2` sets how many frames per second to sample (default 2). Raise it to 4 for fast action such as zoomies or pouncing, and drop it to 1 for slow footage such as sleeping or grooming.
 - `--max-frames 24` caps the number of frames sent to the model. 16 to 24 is the sweet spot between quality and speed.
-- `--prompt "..."` replaces the default description prompt.
+- `--prompt "..."` replaces the default description prompt. Stage 2 only suggests a cut if a custom prompt still asks for timed moments in the same layout.
 - `--show-prompt` prints the prompt the model will see, including your cats, and exits.
 - `--cats-file path.json` reads cats from another file; see [cats.md](cats.md).
 
@@ -75,6 +77,12 @@ Stage 2 works like a comedy writers' room, in four steps:
 2. **Pitch.** One call pitches a different comic angle for each draft, each built on the main action. Each angle takes a different lens: raising the stakes, playing the cats' personalities off each other, and a misdirection with a deflating punchline.
 3. **Draft.** One draft of the narration is written around each angle. Every draft must say the main action plainly and narrate only actions from the facts. Jokes can exaggerate why the cats do things, never what they do: lying on her back doesn't become a backflip.
 4. **Judge.** One last call checks every draft (does it show the main action? does it invent or upgrade any action?) and ranks them by funniness. The code, not the model, keeps the funniest draft that passed. If every draft fails, one more "faithful" draft (no angle, facts only) is written and checked; if that fails too, the funniest draft is kept with a warning.
+
+### Suggested cut
+
+When the description's moments have times, the beat sheet also names the setup (the earliest moment a viewer must see), the payoff (the moment with the main action) and any quiet moments where nothing happens. The code turns those into a suggested cut: start 0.5 seconds before the setup, end 1 second after the payoff, and drop quiet moments of 1.5 seconds or more between the two. The rules match the cat-videos-short-form skill's editing rules, and the numbers are `CUT_LEAD_IN`, `CUT_TAIL` and `CUT_MIN_DROP` in `catplanet/generate_script.py`.
+
+`pipeline.py` and `batch.py` save it as `<name>.cuts.json` and list it under "Suggested cut" in `<name>.script_drafts.txt`. Running stage 2 by itself, `--cut-out cuts.json` saves it. It is a starting point for the edit, not a decision: nothing else in the pipeline uses it, and the script is still written for the whole clip.
 
 ### Priority moments
 
