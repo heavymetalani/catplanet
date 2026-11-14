@@ -53,7 +53,7 @@ The model gets those times because the prompt lists each frame's time in the cli
 Useful options:
 
 - `--fps 2` sets how many frames per second to sample (default 2). Raise it to 4 for fast action such as zoomies or pouncing, and drop it to 1 for slow footage such as sleeping or grooming.
-- `--max-frames 24` caps the number of frames sent to the model. 16 to 24 is the sweet spot between quality and speed.
+- `--max-frames 24` caps the number of frames sent to the model. 16 to 24 is the sweet spot between quality and speed. More is worse, not better: in a November 2026 test on 11 clips, `--fps 4 --max-frames 40` (with `--num-ctx 24576`) missed or only partly caught the main event more often, timed the payoff right in 2 of 9 clips against 5 of 9, took about 70% longer, and two 30-second clips didn't fit in the context at all. Only the shortest clip (10 s) was timed better.
 - `--prompt "..."` replaces the default description prompt. Stage 2 only suggests a cut if a custom prompt still asks for timed moments in the same layout.
 - `--show-prompt` prints the prompt the model will see, including your cats, and exits.
 - `--cats-file path.json` reads cats from another file; see [cats.md](cats.md).
