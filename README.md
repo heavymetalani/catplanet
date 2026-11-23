@@ -1,5 +1,11 @@
 # Cat Planet: nature documentary narration for house cats
 
+[![Watch: I built an AI nature documentary narrator for my cats](https://img.youtube.com/vi/SEjVRvW4dZ8/hqdefault.jpg)](https://www.youtube.com/watch?v=SEjVRvW4dZ8)
+
+**Demo:** [How it works (devlog)](https://www.youtube.com/watch?v=SEjVRvW4dZ8) · [Example Short: "She Never Saw It Coming"](https://www.youtube.com/shorts/2XIH8fIJJKc)
+
+`video → MiniCPM-V 4.5 (describe) → Qwen2.5-14B (script) → Chatterbox or Kokoro (voice) → ACE-Step 1.5 (string quartet)`
+
 This project turns a short cat video into an Animal-Planet-style voiceover with a string quartet score. Everything runs locally on a Mac (built for a Mac Mini M4 with 24 GB of memory).
 
 ## How it works
